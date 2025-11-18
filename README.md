@@ -19,29 +19,6 @@ This repository contains:
 
 ---
 
-## Repository Structure
-
-project/
-│
-├── data/
-│ ├── klines/ # Downloaded Binance 1m kline .zip files
-│ ├── synthetic/ # Synthetic funding, OI, premium datasets
-│ └── ...
-│
-├── sql/
-│ ├── 01_create_tables.sql # All CREATE TABLE schemas
-│ ├── 02_create_views.sql # minute_returns view definition
-│ └── milestone3_queries.sql # All Milestone 3 analytical queries
-│
-├── python/
-│ ├── load_data.py # Full ETL pipeline
-│ └── generate_synthetic.py # Synthetic OI + funding + premium generator
-│
-└── README.md
-
-
----
-
 ## Data Loading Pipeline (ETL)
 
 ### **1. Kline Data (Real Market Data)**  
