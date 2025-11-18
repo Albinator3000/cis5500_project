@@ -52,7 +52,7 @@ We load these synthetic datasets using the same `load_data.py` pipeline.
 
 All project tables are defined in:
 
-sql/01_create_tables.sql
+sql/create_tables.sql
 
 This includes:
 
@@ -89,7 +89,7 @@ This includes:
 
 Defined in:
 
-sql/02_create_views.sql
+sql/create_views.sql
 
 
 ### **minute_returns**  
