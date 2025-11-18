@@ -6,16 +6,16 @@
 
 ## Project Overview
 
-This project investigates **short-term price dynamics** surrounding **funding rate events** in crypto perpetual futures.  
-Funding rates are periodic payments exchanged between long and short perpetual futures traders to keep the contract price anchored to the spot market. Because they reflect **leverage imbalance**, they often correlate with **price drift**, **liquidations**, and **market stress regimes**.
+This project investigates short-term price dynamics surrounding funding rate events in crypto perpetual futures.  
+Funding rates are periodic payments exchanged between long and short perpetual futures traders to keep the contract price anchored to the spot market. Because they reflect leverage imbalance, they often correlate with price drift, liquidations, and market stress regimes.
 
 We study six major instruments (BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, DOGEUSDT), but the primary dataset for Milestone 3 uses **minute-level klines** for BTC and ETH plus synthetic supporting datasets for funding, open interest, and premium index.
 
 This repository contains:
 
-- **Data ingestion scripts** (Python)  
-- **PostgreSQL schema** and analytical views  
-- **Milestone 3 analytical SQL queries** 
+- Data ingestion scripts (Python)  
+- PostgreSQL schema and analytical views  
+- Milestone 3 analytical SQL queries 
 
 ---
 
