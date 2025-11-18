@@ -41,9 +41,8 @@ To satisfy Milestone 3 requirements and preserve realistic analytical structure,
 
 These match the schema and statistical distribution needed for the analytics and provide:
 - realistic magnitudes  
-- realistic timestamp spacing  
-- enough rows to exceed the 100,000-row cleaning requirement  
-
+- realistic timestamp spacing
+  
 We load these synthetic datasets using the same `load_data.py` pipeline.
 
 ---
