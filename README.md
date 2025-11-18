@@ -28,7 +28,7 @@ We downloaded **Binance Futures 1-minute klines** in `.zip` format:
 - `BTCUSDT-1m-2024-03.zip`  
 - Same for `ETHUSDT`.
 
-These files contain tens of thousands of rows each (~150k+).  
+These files contain tens of thousands of rows each (Total ~300k).  
 We load them using the optimized `load_data.py` script.
 
 ### **2. Funding Rate / Open Interest / Premium (Synthetic)**  
