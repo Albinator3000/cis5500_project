@@ -20,11 +20,11 @@ const RegimeScreenerPage: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await axios.get<RegimeRow[]>(`${API_BASE}/api/extreme_regimes`, {
+      const res = await axios.get<RegimeRow[]>(`${API_BASE}/api/regime_stress`, {
         params: {
           start_ts: startTs,
           end_ts: endTs,
-          min_regime_events: minEvents,
+          min_events: minEvents,
           top_k: topK,
         },
       });

@@ -175,7 +175,7 @@ def get_funding_deciles(
 
 
 # -------------------------------------------------------------------
-# Query 3 – Stress regimes: high |funding| and high OI
+# Query 3 – Stress regimes based on high |funding| only
 # -------------------------------------------------------------------
 @app.get("/api/regime_stress")
 def get_regime_stress(
@@ -184,41 +184,26 @@ def get_regime_stress(
     min_events: int = 10,
     top_k: int = 20,
 ) -> List[Dict[str, Any]]:
+    """
+    Identify symbols whose funding events have extreme |rate|
+    and compute average 60m post-event markouts in those regimes.
+    Extreme is defined as |rate| above the 90th percentile over
+    the requested window.
+    """
     sql = """
-        WITH daily_rate_stats AS (
+        WITH rate_stats AS (
             SELECT
-                symbol,
-                DATE(ts) AS d,
                 PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY ABS(rate)) AS p90_abs_rate
             FROM funding
             WHERE ts BETWEEN %s AND %s
-            GROUP BY symbol, DATE(ts)
-        ),
-        rolling_oi_stats AS (
-            SELECT
-                symbol,
-                ts,
-                PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY oi) OVER (
-                    PARTITION BY symbol
-                    ORDER BY ts
-                    RANGE BETWEEN INTERVAL '14 days' PRECEDING AND CURRENT ROW
-                ) AS p90_oi_14d
-            FROM open_interest
-            WHERE ts BETWEEN %s - INTERVAL '14 days' AND %s
         ),
         regime_events AS (
             SELECT
                 f.symbol,
                 f.ts
-            FROM funding f
-            JOIN daily_rate_stats dr
-              ON dr.symbol = f.symbol
-             AND dr.d = DATE(f.ts)
-            JOIN rolling_oi_stats oi
-              ON oi.symbol = f.symbol
-             AND oi.ts = f.ts
-            WHERE ABS(f.rate) > dr.p90_abs_rate
-              AND oi.oi > oi.p90_oi_14d
+            FROM funding f, rate_stats rs
+            WHERE f.ts BETWEEN %s AND %s
+              AND ABS(f.rate) > rs.p90_abs_rate
         ),
         event_markouts AS (
             SELECT
@@ -243,7 +228,6 @@ def get_regime_stress(
         LIMIT %s;
     """
     return run_query(sql, (start_ts, end_ts, start_ts, end_ts, min_events, top_k))
-
 
 # -------------------------------------------------------------------
 # Query 4 – Symbols that never have negative 30m CAR in low-vol regimes
