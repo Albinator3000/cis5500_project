@@ -143,7 +143,7 @@ These queries collectively reproduce a realistic market microstructure analysis 
 
 ---
 
-## Summary of What We Accomplished
+## Summary of What We Accomplished so far
 
 - Built a clean, normalized **PostgreSQL schema** on AWS RDS  
 - Wrote a full **Python ETL pipeline** to ingest real klines + synthetic supporting datasets  
