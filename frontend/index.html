@@ -2,11 +2,124 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Funding-Aware Market Maker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Funding-Aware Market Maker - Advanced crypto funding rate analysis and trading insights" />
+    <meta name="theme-color" content="#0a0e17" />
+    
+    <!-- Preconnect to Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2300d9ff'/><text x='50%25' y='50%25' dominant-baseline='central' text-anchor='middle' font-family='system-ui' font-weight='bold' font-size='50' fill='%230a0e17'>FA</text></svg>" />
+    
+    <title>FundingAware | Market Intelligence Platform</title>
+    
+    <style>
+      /* Critical CSS for initial load */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      html {
+        background: #0a0e17;
+      }
+      
+      body {
+        background: #0a0e17;
+        min-height: 100vh;
+      }
+      
+      /* Loading screen */
+      #loading-screen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #0a0e17;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 1.5rem;
+        z-index: 9999;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+      }
+      
+      #loading-screen.hidden {
+        opacity: 0;
+        visibility: hidden;
+      }
+      
+      .loading-logo {
+        width: 64px;
+        height: 64px;
+        background: linear-gradient(135deg, #00d9ff, #f59e0b);
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, sans-serif;
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #0a0e17;
+        animation: pulse 2s ease-in-out infinite;
+      }
+      
+      .loading-text {
+        font-family: system-ui, sans-serif;
+        color: #94a3b8;
+        font-size: 0.875rem;
+        letter-spacing: 0.1em;
+      }
+      
+      .loading-spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid #1a2234;
+        border-top-color: #00d9ff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 217, 255, 0.4); }
+        50% { transform: scale(1.05); box-shadow: 0 0 20px 10px rgba(0, 217, 255, 0); }
+      }
+    </style>
   </head>
   <body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+      <div class="loading-logo">FA</div>
+      <div class="loading-spinner"></div>
+      <div class="loading-text">LOADING</div>
+    </div>
+    
+    <!-- React Root -->
     <div id="root"></div>
+    
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Hide loading screen when React is ready
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          var loadingScreen = document.getElementById('loading-screen');
+          if (loadingScreen) {
+            loadingScreen.classList.add('hidden');
+            setTimeout(function() {
+              loadingScreen.remove();
+            }, 300);
+          }
+        }, 500);
+      });
+    </script>
   </body>
 </html>

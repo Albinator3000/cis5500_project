@@ -1,7 +1,7 @@
-import React, { useState } from "react";
-import axios from "axios";
+import React, { useState } from 'react';
+import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 interface EventCarRow {
   symbol: string;
@@ -10,10 +10,30 @@ interface EventCarRow {
   max_car: number;
 }
 
+const ChartIcon = () => (
+  <svg className="page-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="20" x2="18" y2="10"></line>
+    <line x1="12" y1="20" x2="12" y2="4"></line>
+    <line x1="6" y1="20" x2="6" y2="14"></line>
+  </svg>
+);
+
+const PlayIcon = () => (
+  <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+  </svg>
+);
+
+const EmptyIcon = () => (
+  <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+  </svg>
+);
+
 const EventStudyPage: React.FC = () => {
-  const [symbol, setSymbol] = useState("BTCUSDT");
-  const [startTs, setStartTs] = useState("2024-01-01T00:00:00Z");
-  const [endTs, setEndTs] = useState("2024-01-31T23:59:59Z");
+  const [symbol, setSymbol] = useState('BTCUSDT');
+  const [startTs, setStartTs] = useState('2024-01-01T00:00:00Z');
+  const [endTs, setEndTs] = useState('2024-01-31T23:59:59Z');
   const [data, setData] = useState<EventCarRow[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -26,82 +46,187 @@ const EventStudyPage: React.FC = () => {
       setData(res.data);
     } catch (e) {
       console.error(e);
-      alert("Failed to fetch event CAR data");
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div>
-      <h2>Event Study Explorer</h2>
-      <p>View min/max cumulative return around funding events.</p>
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
 
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-        <label>
-          Symbol:{" "}
-          <input
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value)}
-            style={{ width: "120px" }}
-          />
-        </label>
-        <label>
-          Start TS:{" "}
-          <input
-            value={startTs}
-            onChange={(e) => setStartTs(e.target.value)}
-            style={{ width: "220px" }}
-          />
-        </label>
-        <label>
-          End TS:{" "}
-          <input
-            value={endTs}
-            onChange={(e) => setEndTs(e.target.value)}
-            style={{ width: "220px" }}
-          />
-        </label>
-        <button onClick={fetchData} disabled={loading}>
-          {loading ? "Loading..." : "Run"}
-        </button>
+  const formatValue = (value: number) => {
+    const formatted = (value * 100).toFixed(2);
+    return `${value >= 0 ? '+' : ''}${formatted}%`;
+  };
+
+  // Calculate stats
+  const avgMinCar = data.length > 0 
+    ? data.reduce((sum, row) => sum + row.min_car, 0) / data.length 
+    : 0;
+  const avgMaxCar = data.length > 0 
+    ? data.reduce((sum, row) => sum + row.max_car, 0) / data.length 
+    : 0;
+  const totalEvents = data.length;
+
+  return (
+    <div className="animate-fade-in">
+      <div className="page-header">
+        <h1 className="page-title">
+          <ChartIcon />
+          Event Study Explorer
+        </h1>
+        <p className="page-description">
+          Analyze cumulative abnormal returns (CAR) around funding rate events. 
+          View min/max price movements within the event window.
+        </p>
       </div>
 
-      <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th style={{ borderBottom: "1px solid #ccc", textAlign: "left" }}>
-              Event TS
-            </th>
-            <th style={{ borderBottom: "1px solid #ccc", textAlign: "right" }}>
-              Min CAR
-            </th>
-            <th style={{ borderBottom: "1px solid #ccc", textAlign: "right" }}>
-              Max CAR
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((row) => (
-            <tr key={`${row.symbol}-${row.event_ts}`}>
-              <td>{row.event_ts}</td>
-              <td style={{ textAlign: "right" }}>
-                {row.min_car.toFixed(4)}
-              </td>
-              <td style={{ textAlign: "right" }}>
-                {row.max_car.toFixed(4)}
-              </td>
-            </tr>
-          ))}
-          {data.length === 0 && !loading && (
-            <tr>
-              <td colSpan={3} style={{ paddingTop: "0.5rem" }}>
-                No data yet. Adjust parameters and click Run.
-              </td>
-            </tr>
+      {/* Stats Cards */}
+      {data.length > 0 && (
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-label">Total Events</div>
+            <div className="stat-value">{totalEvents}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Avg Min CAR</div>
+            <div className={`stat-value ${avgMinCar < 0 ? 'negative' : 'positive'}`}>
+              {formatValue(avgMinCar)}
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Avg Max CAR</div>
+            <div className={`stat-value ${avgMaxCar >= 0 ? 'positive' : 'negative'}`}>
+              {formatValue(avgMaxCar)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Query Form */}
+      <div className="card mb-xl">
+        <div className="card-header">
+          <h3 className="card-title">Query Parameters</h3>
+        </div>
+        <div className="form-grid">
+          <div className="form-group">
+            <label className="form-label">Symbol</label>
+            <input
+              className="form-input"
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value)}
+              placeholder="e.g., BTCUSDT"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Start Timestamp</label>
+            <input
+              className="form-input"
+              value={startTs}
+              onChange={(e) => setStartTs(e.target.value)}
+              placeholder="YYYY-MM-DDTHH:MM:SSZ"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">End Timestamp</label>
+            <input
+              className="form-input"
+              value={endTs}
+              onChange={(e) => setEndTs(e.target.value)}
+              placeholder="YYYY-MM-DDTHH:MM:SSZ"
+            />
+          </div>
+          <div className="form-group" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn btn-primary" onClick={fetchData} disabled={loading}>
+              {loading ? (
+                <>
+                  <div className="loading-spinner" />
+                  Running...
+                </>
+              ) : (
+                <>
+                  <PlayIcon />
+                  Run Query
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Results Table */}
+      <div className="card">
+        <div className="card-header">
+          <h3 className="card-title">Event Results</h3>
+          {data.length > 0 && (
+            <span className="badge badge-info">{data.length} events</span>
           )}
-        </tbody>
-      </table>
+        </div>
+        <div className="data-table-wrapper">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Event Timestamp</th>
+                <th>Symbol</th>
+                <th className="text-right">Min CAR</th>
+                <th className="text-right">Max CAR</th>
+                <th className="text-right">Range</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row) => {
+                const range = row.max_car - row.min_car;
+                return (
+                  <tr key={`${row.symbol}-${row.event_ts}`}>
+                    <td>
+                      <span className="font-mono">{formatDate(row.event_ts)}</span>
+                    </td>
+                    <td>
+                      <span className="badge badge-info">{row.symbol}</span>
+                    </td>
+                    <td className={`text-right font-mono ${row.min_car < 0 ? 'value-negative' : 'value-positive'}`}>
+                      {formatValue(row.min_car)}
+                    </td>
+                    <td className={`text-right font-mono ${row.max_car >= 0 ? 'value-positive' : 'value-negative'}`}>
+                      {formatValue(row.max_car)}
+                    </td>
+                    <td className="text-right font-mono value-neutral">
+                      {formatValue(range)}
+                    </td>
+                  </tr>
+                );
+              })}
+              {data.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="empty-state">
+                      <EmptyIcon />
+                      <p>No data yet. Adjust parameters and click Run Query.</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {loading && (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="empty-state">
+                      <div className="loading-spinner" style={{ width: 32, height: 32, margin: '0 auto' }} />
+                      <p style={{ marginTop: '1rem' }}>Fetching event data...</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };
