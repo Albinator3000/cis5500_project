@@ -9,7 +9,7 @@ import psycopg2
 # 1. DB CONFIG
 # ==============================
 
-DB_HOST = "cis550-project-instance.c5m282o04n2q.us-east-1.rds.amazonaws.com"
+DB_HOST = "cis550-project-db.c1am6gascgf2.us-east-1.rds.amazonaws.com"
 DB_PORT = 5432
 DB_NAME = "cis550_project"
 DB_USER = "postgres"
@@ -20,7 +20,47 @@ SYN_DIR = os.path.join("data", "synthetic")
 
 
 # ==============================
-# 2. DB CONNECTION HELPER
+# 2. SMALL PARSING HELPERS
+# ==============================
+
+def _safe_parse_ts(raw_ts, context):
+    """
+    Safely parse timestamps. Returns None on failure so callers can skip the row.
+    """
+    try:
+        if isinstance(raw_ts, datetime):
+            return raw_ts
+        # dateparser is robust to many formats and time zones
+        return dateparser.parse(str(raw_ts))
+    except Exception:
+        print(f"[WARN] Skipping row with bad timestamp '{raw_ts}' in {context}")
+        return None
+
+
+def _safe_float(raw_val, context, field_name):
+    """
+    Safely parse floats. Returns None on failure so callers can skip the row.
+    """
+    try:
+        return float(raw_val)
+    except Exception:
+        print(f"[WARN] Skipping row with bad float '{raw_val}' for {field_name} in {context}")
+        return None
+
+
+def _safe_int(raw_val, context, field_name):
+    """
+    Safely parse ints. Returns None on failure so callers can skip the row.
+    """
+    try:
+        return int(raw_val)
+    except Exception:
+        print(f"[WARN] Skipping row with bad int '{raw_val}' for {field_name} in {context}")
+        return None
+
+
+# ==============================
+# 3. DB CONNECTION HELPER
 # ==============================
 
 def get_conn():
@@ -34,18 +74,22 @@ def get_conn():
 
 
 # ==============================
-# 3. INSERT SYMBOLS
+# 4. INSERT SYMBOLS
 # ==============================
 
 def init_symbols(symbols):
     """
     Insert the symbols we care about into the symbols table.
-    For now, we just fill base/quote by splitting 'BTCUSDT' -> BTC / USDT.
+    We also normalize them to upper case and derive base/quote.
     """
     conn = get_conn()
     cur = conn.cursor()
 
+    cleaned = []
     for sym in symbols:
+        if not sym:
+            continue
+        sym = sym.upper().strip()
         base = sym[:-4]   # crude but works for typical *USDT pairs
         quote = sym[-4:]
         cur.execute(
@@ -56,20 +100,25 @@ def init_symbols(symbols):
             """,
             (sym, base, quote),
         )
+        cleaned.append(sym)
 
     conn.commit()
     cur.close()
     conn.close()
-    print(f"Inserted/kept {len(symbols)} symbols.")
+    print(f"[SYMBOLS] Inserted/kept {len(cleaned)} symbols: {cleaned}")
 
 
 # ==============================
-# 4. KLINES LOADER
+# 5. KLINES LOADER
 # ==============================
 
 def load_klines_from_folder(folder_path, symbols):
     """
     Iterate over .zip files in data/klines, read CSV contents, and insert into klines table.
+    Basic cleaning:
+      - Skip header rows
+      - Skip rows with non-numeric timestamps/prices/volume/trade counts
+      - Enforce non-negative volume and trade counts
     """
     import zipfile  # only needed if you ever re-enable this
 
@@ -77,20 +126,29 @@ def load_klines_from_folder(folder_path, symbols):
     cur = conn.cursor()
 
     all_files = [f for f in os.listdir(folder_path) if f.endswith(".zip")]
-    print("All kline files in folder: ", all_files)
+    print("[KLINES] All kline files in folder:", all_files)
+
+    # Normalize symbols to upper-case once
+    symbol_set = {s.upper().strip() for s in symbols}
 
     files = all_files
     BATCH_SIZE = 5000
 
+    total_good = 0
+    total_bad = 0
+
     for fname in files:
         path = os.path.join(folder_path, fname)
 
-        symbol = fname.split("-")[0]
-        if symbol not in symbols:
-            print(f"Skipping {fname} (symbol {symbol} not in our list)")
+        symbol = fname.split("-")[0].upper().strip()
+        if symbol not in symbol_set:
+            print(f"[KLINES] Skipping {fname} (symbol {symbol} not in our list)")
             continue
 
-        print(f"Loading klines from {fname} for symbol {symbol}...")
+        print(f"[KLINES] Loading from {fname} for symbol {symbol}...")
+
+        file_good = 0
+        file_bad = 0
 
         with zipfile.ZipFile(path, "r") as zf:
             inner_name = zf.namelist()[0]
@@ -101,26 +159,41 @@ def load_klines_from_folder(folder_path, symbols):
 
                 for row in reader:
                     if not row:
+                        file_bad += 1
                         continue
 
+                    # Skip header row if present
                     if first:
                         first = False
                         if row[0].lower().strip() in ("open_time", "open time"):
                             continue
 
+                    # 0: open time (ms)
+                    # 1: open, 2: high, 3: low, 4: close, 5: volume, 8: #trades
                     try:
-                        open_time_ms = int(float(row[0]))
-                    except ValueError:
+                        open_time_ms = float(row[0])
+                    except Exception:
+                        file_bad += 1
                         continue
 
                     open_time = datetime.utcfromtimestamp(open_time_ms / 1000.0)
 
-                    open_price = float(row[1])
-                    high_price = float(row[2])
-                    low_price = float(row[3])
-                    close_price = float(row[4])
-                    volume = float(row[5])
-                    num_trades = int(row[8])
+                    open_price = _safe_float(row[1], fname, "open_price")
+                    high_price = _safe_float(row[2], fname, "high_price")
+                    low_price = _safe_float(row[3], fname, "low_price")
+                    close_price = _safe_float(row[4], fname, "close_price")
+                    volume = _safe_float(row[5], fname, "volume")
+                    num_trades = _safe_int(row[8], fname, "number_of_trades")
+
+                    # Skip rows where any key field failed to parse
+                    if None in (open_price, high_price, low_price, close_price, volume, num_trades):
+                        file_bad += 1
+                        continue
+
+                    # Very light sanity checks
+                    if volume < 0 or num_trades < 0:
+                        file_bad += 1
+                        continue
 
                     batch.append(
                         (
@@ -134,6 +207,7 @@ def load_klines_from_folder(folder_path, symbols):
                             num_trades,
                         )
                     )
+                    file_good += 1
 
                     if len(batch) >= BATCH_SIZE:
                         _insert_klines_batch(cur, batch)
@@ -143,11 +217,15 @@ def load_klines_from_folder(folder_path, symbols):
                     _insert_klines_batch(cur, batch)
 
                 conn.commit()
-                print(f"Finished {fname}")
+                print(f"[KLINES] Finished {fname} "
+                      f"(good rows: {file_good}, skipped rows: {file_bad})")
+
+        total_good += file_good
+        total_bad += file_bad
 
     cur.close()
     conn.close()
-    print("Finished loading klines.")
+    print(f"[KLINES] Completed. Total good rows: {total_good}, total skipped rows: {total_bad}")
 
 
 def _insert_klines_batch(cur, batch):
@@ -165,29 +243,41 @@ def _insert_klines_batch(cur, batch):
 
 
 # ==============================
-# 5. LOAD SYNTHETIC FUNDING FROM CSV
+# 6. LOAD SYNTHETIC FUNDING FROM CSV
 # ==============================
 
 def load_synthetic_funding(csv_path):
     """
     Load synthetic funding data from CSV into the funding table.
     CSV headers: symbol, ts, rate
+    Cleaning:
+      - Normalize symbol to upper-case
+      - Skip rows with bad timestamp or non-numeric rate
     """
     conn = get_conn()
     cur = conn.cursor()
 
-    print(f"Loading synthetic funding from: {csv_path}")
+    print(f"[FUNDING] Loading synthetic funding from: {csv_path}")
     with open(csv_path, "r", newline="") as f:
         reader = csv.DictReader(f)
         batch = []
         BATCH_SIZE = 2000
+        good = 0
+        bad = 0
 
         for row in reader:
-            sym = row["symbol"]
-            ts = dateparser.parse(row["ts"])
-            rate = float(row["rate"])
+            sym = (row.get("symbol") or "").upper().strip()
+            ts_raw = row.get("ts")
+            rate_raw = row.get("rate")
+
+            ts = _safe_parse_ts(ts_raw, "funding")
+            rate = _safe_float(rate_raw, "funding", "rate")
+            if sym == "" or ts is None or rate is None:
+                bad += 1
+                continue
 
             batch.append((sym, ts, rate))
+            good += 1
 
             if len(batch) >= BATCH_SIZE:
                 cur.executemany(
@@ -214,33 +304,45 @@ def load_synthetic_funding(csv_path):
 
     cur.close()
     conn.close()
-    print("Finished loading synthetic funding.")
+    print(f"[FUNDING] Finished. Good rows: {good}, skipped rows: {bad}")
 
 
 # ==============================
-# 6. LOAD SYNTHETIC OPEN INTEREST FROM CSV
+# 7. LOAD SYNTHETIC OPEN INTEREST FROM CSV
 # ==============================
 
 def load_synthetic_open_interest(csv_path):
     """
     Load synthetic open interest data from CSV into the open_interest table.
     CSV headers: symbol, ts, oi
+    Cleaning:
+      - Normalize symbol
+      - Skip rows with bad timestamp / oi
     """
     conn = get_conn()
     cur = conn.cursor()
 
-    print(f"Loading synthetic open interest from: {csv_path}")
+    print(f"[OI] Loading synthetic open interest from: {csv_path}")
     with open(csv_path, "r", newline="") as f:
         reader = csv.DictReader(f)
         batch = []
         BATCH_SIZE = 2000
+        good = 0
+        bad = 0
 
         for row in reader:
-            sym = row["symbol"]
-            ts = dateparser.parse(row["ts"])
-            oi = float(row["oi"])
+            sym = (row.get("symbol") or "").upper().strip()
+            ts_raw = row.get("ts")
+            oi_raw = row.get("oi")
+
+            ts = _safe_parse_ts(ts_raw, "open_interest")
+            oi = _safe_float(oi_raw, "open_interest", "oi")
+            if sym == "" or ts is None or oi is None:
+                bad += 1
+                continue
 
             batch.append((sym, ts, oi))
+            good += 1
 
             if len(batch) >= BATCH_SIZE:
                 cur.executemany(
@@ -267,36 +369,48 @@ def load_synthetic_open_interest(csv_path):
 
     cur.close()
     conn.close()
-    print("Finished loading synthetic open interest.")
+    print(f"[OI] Finished. Good rows: {good}, skipped rows: {bad}")
 
 
 # ==============================
-# 7. LOAD SYNTHETIC PREMIUM INDEX
+# 8. LOAD SYNTHETIC PREMIUM INDEX
 # ==============================
 
 def load_synthetic_premium_index(csv_path):
     """
     Load synthetic premium index data from CSV into the premium_index table.
     CSV headers: symbol, ts, open_val, high_val, low_val, close_val
+    Cleaning:
+      - Normalize symbol
+      - Skip rows with bad timestamp / price fields
     """
     conn = get_conn()
     cur = conn.cursor()
 
-    print(f"Loading synthetic premium index from: {csv_path}")
+    print(f"[PREMIUM] Loading synthetic premium index from: {csv_path}")
     with open(csv_path, "r", newline="") as f:
         reader = csv.DictReader(f)
         batch = []
         BATCH_SIZE = 2000
+        good = 0
+        bad = 0
 
         for row in reader:
-            sym = row["symbol"]
-            ts = dateparser.parse(row["ts"])
-            open_v = float(row["open_val"])
-            high_v = float(row["high_val"])
-            low_v = float(row["low_val"])
-            close_v = float(row["close_val"])
+            sym = (row.get("symbol") or "").upper().strip()
+            ts_raw = row.get("ts")
+
+            ts = _safe_parse_ts(ts_raw, "premium_index")
+            open_v = _safe_float(row.get("open_val"), "premium_index", "open_val")
+            high_v = _safe_float(row.get("high_val"), "premium_index", "high_val")
+            low_v = _safe_float(row.get("low_val"), "premium_index", "low_val")
+            close_v = _safe_float(row.get("close_val"), "premium_index", "close_val")
+
+            if sym == "" or ts is None or None in (open_v, high_v, low_v, close_v):
+                bad += 1
+                continue
 
             batch.append((sym, ts, open_v, high_v, low_v, close_v))
+            good += 1
 
             if len(batch) >= BATCH_SIZE:
                 cur.executemany(
@@ -323,11 +437,11 @@ def load_synthetic_premium_index(csv_path):
 
     cur.close()
     conn.close()
-    print("Finished loading synthetic premium index.")
+    print(f"[PREMIUM] Finished. Good rows: {good}, skipped rows: {bad}")
 
 
 # ==============================
-# 8. MAIN DRIVER
+# 9. MAIN DRIVER
 # ==============================
 
 def main():
@@ -337,7 +451,7 @@ def main():
     # 1) Ensure symbols exist in the symbols table
     init_symbols(symbols)
 
-    # 2) KLINES LOADING DISABLED
+    # 2) Load klines from your downloaded ZIPs
     klines_folder = os.path.join("data", "klines")
     load_klines_from_folder(klines_folder, symbols)
 
@@ -351,9 +465,8 @@ def main():
     load_synthetic_open_interest(oi_csv)
     load_synthetic_premium_index(prem_csv)
 
-    print("All synthetic data loaded. You can now run Milestone 3 SQL queries.")
+    print("[MAIN] All synthetic data loaded. You can now run Milestone 3 SQL queries.")
 
 
 if __name__ == "__main__":
     main()
-
