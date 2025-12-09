@@ -520,17 +520,24 @@ CREATE INDEX idx_mv_event_volatility_regime
 ------------------------------------------------------------
 DROP MATERIALIZED VIEW IF EXISTS mv_rolling_oi_stats CASCADE;
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_interest_symbol_ts
+ON open_interest (symbol, ts);
+
 CREATE MATERIALIZED VIEW mv_rolling_oi_stats AS
 SELECT
-    symbol,
-    ts,
-    oi,
-    PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY oi) OVER (
-        PARTITION BY symbol
-        ORDER BY ts
-        RANGE BETWEEN INTERVAL '14 days' PRECEDING AND CURRENT ROW
-    ) AS p90_oi_14d
-FROM open_interest;
+    base.symbol,
+    base.ts,
+    base.oi,
+    percentile_cont(0.9) WITHIN GROUP (ORDER BY win.oi) AS p90_oi_14d
+FROM open_interest AS base
+JOIN open_interest AS win
+  ON win.symbol = base.symbol
+ AND win.ts >  base.ts - INTERVAL '14 days'
+ AND win.ts <= base.ts
+GROUP BY
+    base.symbol,
+    base.ts,
+    base.oi;
 
 CREATE INDEX idx_mv_rolling_oi_stats_symbol_ts
     ON mv_rolling_oi_stats(symbol, ts);
@@ -774,37 +781,7 @@ BEGIN
     RAISE NOTICE 'All materialized views refreshed successfully!';
 END $$;
 
-
-------------------------------------------------------------
--- Helper: Get timing for a query
--- Usage: \timing on in psql, or use EXPLAIN ANALYZE
-------------------------------------------------------------
--- Example:
--- EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
--- SELECT ... your query here ...
-
-
-------------------------------------------------------------
--- PART 5: PERFORMANCE SUMMARY TABLE
-------------------------------------------------------------
-
 /*
-================================================================================
-PERFORMANCE COMPARISON SUMMARY
-================================================================================
-
-| Query # | Description                                    | Pre-Optimization Time | Post-Optimization Time | Optimization Technique                                      |
-|---------|------------------------------------------------|----------------------|------------------------|-------------------------------------------------------------|
-| 1       | CAR Around Funding Events                      | 18-25 seconds        | 1-2 seconds            | Materialized view (mv_event_car) pre-computes window        |
-| 2       | Funding Rate Deciles vs 60m Drift              | 20-28 seconds        | 1-2 seconds            | Materialized views (mv_funding_deciles, mv_event_markouts)  |
-| 3       | Extreme Regime Detection                       | 25-35 seconds        | 2-3 seconds            | Materialized views eliminate correlated subqueries          |
-| 4       | Symbols with No Negative CAR in Low-Vol        | 22-30 seconds        | 2-3 seconds            | Materialized view (mv_event_volatility) pre-computes rv     |
-| 5       | Hour-of-Day Markout Analysis                   | 16-24 seconds        | <1 second              | Materialized view (mv_event_markouts) eliminates joins      |
-| 6       | Volatility Regime Conditioning                 | 20-28 seconds        | 1-2 seconds            | Materialized views (mv_event_volatility, mv_event_markouts) |
-| 7       | Symbol Overview and Liquidity Stats            | 15-22 seconds        | <1 second              | Materialized view (mv_symbol_daily_stats) pre-aggregates    |
-
-Average Improvement: 12x-18x faster
-
 ================================================================================
 OPTIMIZATION STRATEGIES EMPLOYED
 ================================================================================
@@ -835,55 +812,4 @@ OPTIMIZATION STRATEGIES EMPLOYED
    - Pre-join frequently accessed tables in materialized views
    - Reduce number of runtime joins from 2-3 to 0-1
 
-================================================================================
-INEFFICIENCY PATTERNS DEMONSTRATED (SLOW QUERIES)
-================================================================================
-
-Pattern 1: **Unfiltered CTEs**
-   - Load entire funding/klines table without WHERE clause
-   - Apply filters only in final SELECT
-   - Impact: Process 10x-100x more rows than necessary
-
-Pattern 2: **Late Filtering**
-   - Compute expensive operations (window functions, aggregations) on full dataset
-   - Filter to target date range at the end
-   - Impact: Waste computation on data that gets filtered out
-
-Pattern 3: **Repeated Joins**
-   - Join funding to minute_returns multiple times in same query
-   - No caching/materialization of intermediate results
-   - Impact: Repeated table scans
-
-Pattern 4: **Correlated Subqueries**
-   - Nested SELECT in FROM clause that rescans for each row
-   - O(n²) complexity vs O(n log n) with window functions
-   - Impact: Query 3's rolling OI calculation
-
-Pattern 5: **Unoptimized Window Functions**
-   - Compute window functions on large unfiltered datasets
-   - No pre-computation or materialization
-   - Impact: CAR calculation in Query 1
-
-================================================================================
-TRADE-OFFS
-================================================================================
-
-BENEFITS:
-✓ 12x-18x average query performance improvement
-✓ Consistent sub-second to 3-second response times
-✓ Reduced load on base tables (funding, klines, minute_returns)
-✓ Simplified application query logic
-
-COSTS:
-✗ Storage: Materialized views consume ~4-5x additional disk space
-✗ Freshness: Views need periodic refresh (nightly or on-demand)
-✗ Write performance: Initial materialization takes 5-10 minutes
-✗ Maintenance: Must refresh views when source data changes
-
-For this assignment:
-- Trade-off is acceptable: Query workload is read-heavy
-- Funding data is append-only (refresh nightly)
-- Dramatic read performance improvement justifies storage cost
-
-================================================================================
 */
