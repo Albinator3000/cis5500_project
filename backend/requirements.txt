@@ -3,3 +3,7 @@ uvicorn[standard]
 psycopg2-binary
 python-dotenv
 python-dateutil
+python-jose[cryptography]
+passlib[bcrypt]
+httpx
+python-multipart

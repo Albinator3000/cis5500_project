@@ -5,8 +5,17 @@ import os
 
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+# Import auth utilities
+from auth import (
+    create_access_token,
+    verify_token,
+    verify_google_token,
+    get_github_user
+)
 
 # -------------------------------------------------------------------
 # DB CONFIG – update these to match your RDS instance
@@ -47,12 +56,25 @@ def run_query(sql: str, params: tuple) -> List[Dict[str, Any]]:
 
 app = FastAPI(title="Funding-Aware Market Maker API")
 
+# Get allowed origins from environment or use defaults
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# Add production frontend URL if provided
+if FRONTEND_URL and FRONTEND_URL not in allowed_origins:
+    allowed_origins.append(FRONTEND_URL)
+    # Also add without trailing slash if present
+    if FRONTEND_URL.endswith("/"):
+        allowed_origins.append(FRONTEND_URL.rstrip("/"))
+    else:
+        allowed_origins.append(FRONTEND_URL + "/")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,6 +85,84 @@ app.add_middleware(
 def health() -> Dict[str, str]:
     """Simple health check endpoint."""
     return {"status": "ok"}
+
+
+# -------------------------------------------------------------------
+# Authentication Models
+# -------------------------------------------------------------------
+class GoogleAuthRequest(BaseModel):
+    token: str
+
+
+class GitHubAuthRequest(BaseModel):
+    code: str
+    redirect_uri: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: Dict[str, Any]
+
+
+# -------------------------------------------------------------------
+# Authentication Endpoints
+# -------------------------------------------------------------------
+@app.post("/api/auth/google", response_model=AuthResponse)
+async def auth_google(request: GoogleAuthRequest):
+    """
+    Authenticate with Google OAuth.
+    Expects a Google ID token from the frontend.
+    """
+    user_info = await verify_google_token(request.token)
+
+    if not user_info:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Google token"
+        )
+
+    # Create JWT token for our application
+    access_token = create_access_token(data={"sub": user_info["email"], **user_info})
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user_info
+    }
+
+
+@app.post("/api/auth/github", response_model=AuthResponse)
+async def auth_github(request: GitHubAuthRequest):
+    """
+    Authenticate with GitHub OAuth.
+    Expects an authorization code and redirect URI from the frontend.
+    """
+    user_info = await get_github_user(request.code, request.redirect_uri)
+
+    if not user_info:
+        raise HTTPException(
+            status_code=401,
+            detail="Failed to authenticate with GitHub"
+        )
+
+    # Create JWT token for our application
+    access_token = create_access_token(data={"sub": user_info["email"], **user_info})
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user_info
+    }
+
+
+@app.get("/api/auth/me")
+async def get_current_user(user_data: Dict = Depends(verify_token)):
+    """
+    Get current user information from JWT token.
+    Requires Authorization: Bearer <token> header.
+    """
+    return {"user": user_data}
 
 
 # -------------------------------------------------------------------
