@@ -367,6 +367,69 @@ WHERE k.open_time BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY s.symbol
 ORDER BY s.symbol;
 
+------------------------------------------------------------
+-- Query 8:
+-- Rank symbols by average |funding rate|
+------------------------------------------------------------
+SELECT
+    symbol,
+    AVG(ABS(rate)) AS avg_abs_rate,
+    COUNT(*)       AS n_events
+FROM funding
+WHERE ts BETWEEN '2024-01-01 00:00:00' AND '2024-01-31 23:59:59'
+GROUP BY symbol
+HAVING COUNT(*) >= 10           -- minimum # of funding prints
+ORDER BY avg_abs_rate DESC
+LIMIT 10;                       -- top-K
+
+------------------------------------------------------------
+-- Query 9:
+-- Average 30-minute realized volatility after funding
+------------------------------------------------------------
+WITH event_rv AS (
+    SELECT
+        f.symbol,
+        f.ts,
+        STDDEV_SAMP(mr.r1m) AS rv_30m
+    FROM funding f
+    JOIN minute_returns mr
+      ON mr.symbol = f.symbol
+     AND mr.ts BETWEEN f.ts AND f.ts + INTERVAL '30 minutes'
+    WHERE f.ts BETWEEN '2024-01-01 00:00:00' AND '2024-01-31 23:59:59'
+    GROUP BY f.symbol, f.ts
+)
+SELECT
+    symbol,
+    AVG(rv_30m) AS avg_rv_30m,
+    COUNT(*)    AS n_events
+FROM event_rv
+GROUP BY symbol
+ORDER BY avg_rv_30m DESC;
+
+------------------------------------------------------------
+-- Query 10:
+-- Count events where 30-minute CAR exceeds a threshold
+------------------------------------------------------------
+WITH event_car AS (
+    SELECT
+        f.symbol,
+        f.ts,
+        SUM(mr.r1m) AS car_30m
+    FROM funding f
+    JOIN minute_returns mr
+      ON mr.symbol = f.symbol
+     AND mr.ts > f.ts
+     AND mr.ts <= f.ts + INTERVAL '30 minutes'
+    WHERE f.ts BETWEEN '2024-01-01 00:00:00' AND '2024-01-31 23:59:59'
+    GROUP BY f.symbol, f.ts
+)
+SELECT
+    symbol,
+    COUNT(*) AS n_positive_moves
+FROM event_car
+WHERE car_30m > 0.0
+GROUP BY symbol
+ORDER BY n_positive_moves DESC;
 
 ------------------------------------------------------------
 -- PART 2: MATERIALIZED VIEWS FOR OPTIMIZATION
