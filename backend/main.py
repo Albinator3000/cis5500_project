@@ -454,7 +454,8 @@ def get_funding_pressure(
 
 
 # -------------------------------------------------------------------
-# Query 9: Average 30-minute realized volatility after funding
+# Query 9: Average pre-event volatility by symbol
+# Uses mv_event_volatility for fast execution
 # -------------------------------------------------------------------
 @app.get("/api/post_event_volatility")
 def get_post_event_volatility(
@@ -462,26 +463,15 @@ def get_post_event_volatility(
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
     """
-    Average 30-minute realized volatility after funding events by symbol.
+    Average pre-event volatility by symbol using materialized view.
     """
     sql = """
-        WITH event_rv AS (
-            SELECT
-                f.symbol,
-                f.ts,
-                STDDEV_SAMP(mr.r1m) AS rv_30m
-            FROM funding f
-            JOIN minute_returns mr
-              ON mr.symbol = f.symbol
-             AND mr.ts BETWEEN f.ts AND f.ts + INTERVAL '30 minutes'
-            WHERE f.ts BETWEEN %s AND %s
-            GROUP BY f.symbol, f.ts
-        )
         SELECT
             symbol,
-            AVG(rv_30m) AS avg_rv_30m,
+            AVG(rv_1h) AS avg_rv_30m,
             COUNT(*) AS n_events
-        FROM event_rv
+        FROM mv_event_volatility
+        WHERE ts BETWEEN %s AND %s
         GROUP BY symbol
         ORDER BY avg_rv_30m DESC;
     """
@@ -489,7 +479,8 @@ def get_post_event_volatility(
 
 
 # -------------------------------------------------------------------
-# Query 10: Count events where 30-minute CAR exceeds threshold
+# Query 10: Count events where 60-minute markout exceeds threshold
+# Uses mv_event_markouts for fast execution
 # -------------------------------------------------------------------
 @app.get("/api/positive_moves")
 def get_positive_moves(
@@ -498,27 +489,16 @@ def get_positive_moves(
     threshold: float = 0.0,
 ) -> List[Dict[str, Any]]:
     """
-    Count events where 30-minute CAR exceeds threshold by symbol.
+    Count events where 60-minute markout exceeds threshold by symbol.
+    Uses pre-computed mv_event_markouts materialized view.
     """
     sql = """
-        WITH event_car AS (
-            SELECT
-                f.symbol,
-                f.ts,
-                SUM(mr.r1m) AS car_30m
-            FROM funding f
-            JOIN minute_returns mr
-              ON mr.symbol = f.symbol
-             AND mr.ts > f.ts
-             AND mr.ts <= f.ts + INTERVAL '30 minutes'
-            WHERE f.ts BETWEEN %s AND %s
-            GROUP BY f.symbol, f.ts
-        )
         SELECT
             symbol,
             COUNT(*) AS n_positive_moves
-        FROM event_car
-        WHERE car_30m > %s
+        FROM mv_event_markouts
+        WHERE event_ts BETWEEN %s AND %s
+          AND markout_60m > %s
         GROUP BY symbol
         ORDER BY n_positive_moves DESC;
     """

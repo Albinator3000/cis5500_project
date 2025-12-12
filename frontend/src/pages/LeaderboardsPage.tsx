@@ -33,9 +33,11 @@ const LeaderboardsPage: React.FC = () => {
   const [volData, setVolData] = useState<PostEventVolRow[]>([]);
   const [momentumData, setMomentumData] = useState<PositiveMovesRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchPressure = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await axios.get<FundingPressureRow[]>(`${API_BASE}/api/funding_pressure`, {
         params: { 
@@ -46,8 +48,9 @@ const LeaderboardsPage: React.FC = () => {
         },
       });
       setPressureData(res.data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setError(e.response?.data?.detail || e.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -55,6 +58,7 @@ const LeaderboardsPage: React.FC = () => {
 
   const fetchVolatility = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await axios.get<PostEventVolRow[]>(`${API_BASE}/api/post_event_volatility`, {
         params: { 
@@ -63,8 +67,9 @@ const LeaderboardsPage: React.FC = () => {
         },
       });
       setVolData(res.data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setError(e.response?.data?.detail || e.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -72,6 +77,7 @@ const LeaderboardsPage: React.FC = () => {
 
   const fetchMomentum = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await axios.get<PositiveMovesRow[]>(`${API_BASE}/api/positive_moves`, {
         params: { 
@@ -81,8 +87,9 @@ const LeaderboardsPage: React.FC = () => {
         },
       });
       setMomentumData(res.data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setError(e.response?.data?.detail || e.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -150,7 +157,7 @@ const LeaderboardsPage: React.FC = () => {
           onClick={() => setActiveTab('volatility')}
           style={{ flex: 1 }}
         >
-          📈 Post-Event Vol
+          📈 Event Volatility
         </button>
         <button 
           className={`btn ${activeTab === 'momentum' ? 'btn-primary' : 'btn-secondary'}`}
@@ -166,7 +173,7 @@ const LeaderboardsPage: React.FC = () => {
         <div className="card-header">
           <h3 className="card-title">
             {activeTab === 'pressure' && 'Funding Pressure Rankings'}
-            {activeTab === 'volatility' && 'Post-Event Volatility Rankings'}
+            {activeTab === 'volatility' && 'Event Volatility Rankings'}
             {activeTab === 'momentum' && 'Positive Momentum Rankings'}
           </h3>
         </div>
@@ -234,6 +241,18 @@ const LeaderboardsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <div className="card mb-xl" style={{ 
+          background: 'var(--accent-danger-dim)', 
+          border: '1px solid var(--accent-danger)' 
+        }}>
+          <p style={{ color: 'var(--accent-danger)', margin: 0 }}>
+            ⚠️ {error}
+          </p>
+        </div>
+      )}
+
       {/* Funding Pressure Results */}
       {activeTab === 'pressure' && (
         <div className="card">
@@ -300,7 +319,7 @@ const LeaderboardsPage: React.FC = () => {
       {activeTab === 'volatility' && (
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Highest Post-Event Volatility</h3>
+            <h3 className="card-title">Highest Event Volatility</h3>
             {volData.length > 0 && (
               <span className="badge badge-danger">{volData.length} symbols</span>
             )}
@@ -311,7 +330,7 @@ const LeaderboardsPage: React.FC = () => {
                 <tr>
                   <th style={{ width: '60px' }}>Rank</th>
                   <th>Symbol</th>
-                  <th className="text-right">Avg 30m Vol</th>
+                  <th className="text-right">Avg 1h Vol</th>
                   <th className="text-right"># Events</th>
                 </tr>
               </thead>
