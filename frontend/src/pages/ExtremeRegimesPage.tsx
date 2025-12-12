@@ -9,27 +9,9 @@ interface RegimeRow {
   n_events: number;
 }
 
-const FilterIcon = () => (
-  <svg className="page-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-  </svg>
-);
-
-const PlayIcon = () => (
-  <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-  </svg>
-);
-
-const EmptyIcon = () => (
-  <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
-  </svg>
-);
-
-const RegimeScreenerPage: React.FC = () => {
-  const [startTs, setStartTs] = useState('2024-01-01T00:00:00Z');
-  const [endTs, setEndTs] = useState('2024-01-31T23:59:59Z');
+const ExtremeRegimesPage: React.FC = () => {
+  const [startDate, setStartDate] = useState('2024-01-01');
+  const [endDate, setEndDate] = useState('2024-01-31');
   const [minEvents, setMinEvents] = useState(5);
   const [topK, setTopK] = useState(10);
   const [data, setData] = useState<RegimeRow[]>([]);
@@ -38,10 +20,10 @@ const RegimeScreenerPage: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await axios.get<RegimeRow[]>(`${API_BASE}/api/regime_stress`, {
+      const res = await axios.get<RegimeRow[]>(`${API_BASE}/api/extreme_regimes`, {
         params: {
-          start_ts: startTs,
-          end_ts: endTs,
+          start_ts: `${startDate}T00:00:00Z`,
+          end_ts: `${endDate}T23:59:59Z`,
           min_events: minEvents,
           top_k: topK,
         },
@@ -55,7 +37,7 @@ const RegimeScreenerPage: React.FC = () => {
   };
 
   const formatMarkout = (value: number) => {
-    const formatted = (value * 100).toFixed(3);
+    const formatted = (value * 100).toFixed(4);
     return `${value >= 0 ? '+' : ''}${formatted}%`;
   };
 
@@ -70,13 +52,47 @@ const RegimeScreenerPage: React.FC = () => {
     <div className="animate-fade-in">
       <div className="page-header">
         <h1 className="page-title">
-          <FilterIcon />
-          Regime Screener
+          <svg className="page-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+          </svg>
+          Extreme Regime Detection
         </h1>
         <p className="page-description">
-          Identify symbols with extreme funding rate regimes and analyze their average 60-minute markouts.
-          Filter by minimum event count to find statistically significant patterns.
+          Identify symbols with extreme funding regimes (high |rate| AND high OI).
+          Uses <code>mv_daily_rate_stats</code> + <code>mv_rolling_oi_stats</code> + <code>mv_event_markouts</code>.
         </p>
+      </div>
+
+      {/* Info Banner */}
+      <div className="card mb-xl" style={{ 
+        background: 'linear-gradient(135deg, var(--accent-secondary-dim), var(--accent-danger-dim))',
+        border: '1px solid var(--accent-secondary)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-lg)' }}>
+          <div style={{
+            width: 48,
+            height: 48,
+            background: 'var(--accent-secondary)',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 style={{ marginBottom: 'var(--space-xs)', fontSize: '1rem' }}>
+              Dual-Signal Detection
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              This query finds events where <strong>both</strong> the funding rate exceeds the daily 90th percentile 
+              <strong> AND </strong> open interest exceeds the rolling 14-day 90th percentile.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -87,7 +103,7 @@ const RegimeScreenerPage: React.FC = () => {
             <div className="stat-value">{data.length}</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">Total Events</div>
+            <div className="stat-label">Total Extreme Events</div>
             <div className="stat-value">{totalEvents.toLocaleString()}</div>
           </div>
           <div className="stat-card">
@@ -97,8 +113,12 @@ const RegimeScreenerPage: React.FC = () => {
             </div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">Positive Regimes</div>
-            <div className="stat-value positive">{positiveRegimes}/{data.length}</div>
+            <div className="stat-label">Positive/Negative</div>
+            <div className="stat-value">
+              <span className="positive">{positiveRegimes}</span>
+              <span style={{ color: 'var(--text-muted)' }}> / </span>
+              <span className="negative">{data.length - positiveRegimes}</span>
+            </div>
           </div>
         </div>
       )}
@@ -106,25 +126,26 @@ const RegimeScreenerPage: React.FC = () => {
       {/* Query Form */}
       <div className="card mb-xl">
         <div className="card-header">
-          <h3 className="card-title">Screen Parameters</h3>
+          <h3 className="card-title">Detection Parameters</h3>
+          <span className="badge badge-success">⚡ Optimized</span>
         </div>
         <div className="form-grid">
           <div className="form-group">
-            <label className="form-label">Start Timestamp</label>
+            <label className="form-label">Start Date</label>
             <input
               className="form-input"
-              value={startTs}
-              onChange={(e) => setStartTs(e.target.value)}
-              placeholder="YYYY-MM-DDTHH:MM:SSZ"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
           <div className="form-group">
-            <label className="form-label">End Timestamp</label>
+            <label className="form-label">End Date</label>
             <input
               className="form-input"
-              value={endTs}
-              onChange={(e) => setEndTs(e.target.value)}
-              placeholder="YYYY-MM-DDTHH:MM:SSZ"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
           <div className="form-group">
@@ -138,14 +159,14 @@ const RegimeScreenerPage: React.FC = () => {
             />
           </div>
           <div className="form-group">
-            <label className="form-label">Top K</label>
+            <label className="form-label">Top K Symbols</label>
             <input
               className="form-input"
               type="number"
               value={topK}
               onChange={(e) => setTopK(Number(e.target.value))}
               min={1}
-              max={100}
+              max={50}
             />
           </div>
         </div>
@@ -154,12 +175,14 @@ const RegimeScreenerPage: React.FC = () => {
             {loading ? (
               <>
                 <div className="loading-spinner" />
-                Screening...
+                Detecting...
               </>
             ) : (
               <>
-                <PlayIcon />
-                Run Screen
+                <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                </svg>
+                Detect Extreme Regimes
               </>
             )}
           </button>
@@ -169,7 +192,7 @@ const RegimeScreenerPage: React.FC = () => {
       {/* Results Table */}
       <div className="card">
         <div className="card-header">
-          <h3 className="card-title">Regime Results</h3>
+          <h3 className="card-title">Extreme Regime Results</h3>
           {data.length > 0 && (
             <span className="badge badge-warning">Top {data.length}</span>
           )}
@@ -180,7 +203,7 @@ const RegimeScreenerPage: React.FC = () => {
               <tr>
                 <th style={{ width: '60px' }}>Rank</th>
                 <th>Symbol</th>
-                <th className="text-right">Avg Markout 60m</th>
+                <th className="text-right">Avg 60m Markout</th>
                 <th className="text-right"># Events</th>
                 <th className="text-center">Signal</th>
               </tr>
@@ -189,7 +212,16 @@ const RegimeScreenerPage: React.FC = () => {
               {data.map((row, index) => (
                 <tr key={row.symbol}>
                   <td>
-                    <span className="text-muted">#{index + 1}</span>
+                    {index < 3 ? (
+                      <span style={{ 
+                        color: index === 0 ? '#ffd700' : index === 1 ? '#c0c0c0' : '#cd7f32',
+                        fontWeight: 700
+                      }}>
+                        #{index + 1}
+                      </span>
+                    ) : (
+                      <span className="text-muted">#{index + 1}</span>
+                    )}
                   </td>
                   <td>
                     <span className="badge badge-info">{row.symbol}</span>
@@ -202,13 +234,13 @@ const RegimeScreenerPage: React.FC = () => {
                   </td>
                   <td className="text-center">
                     {row.avg_markout_60m > 0.001 ? (
-                      <span className="badge badge-success">Strong Buy</span>
+                      <span className="badge badge-success">Strong Long</span>
                     ) : row.avg_markout_60m > 0 ? (
-                      <span className="badge badge-info">Buy</span>
+                      <span className="badge badge-info">Long</span>
                     ) : row.avg_markout_60m < -0.001 ? (
-                      <span className="badge badge-danger">Strong Sell</span>
+                      <span className="badge badge-danger">Strong Short</span>
                     ) : (
-                      <span className="badge badge-warning">Sell</span>
+                      <span className="badge badge-warning">Short</span>
                     )}
                   </td>
                 </tr>
@@ -217,8 +249,10 @@ const RegimeScreenerPage: React.FC = () => {
                 <tr>
                   <td colSpan={5}>
                     <div className="empty-state">
-                      <EmptyIcon />
-                      <p>No regimes found. Adjust parameters and run the screen.</p>
+                      <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                      </svg>
+                      <p>No extreme regimes found. Adjust parameters and detect.</p>
                     </div>
                   </td>
                 </tr>
@@ -228,7 +262,7 @@ const RegimeScreenerPage: React.FC = () => {
                   <td colSpan={5}>
                     <div className="empty-state">
                       <div className="loading-spinner" style={{ width: 32, height: 32, margin: '0 auto' }} />
-                      <p style={{ marginTop: '1rem' }}>Screening regimes...</p>
+                      <p style={{ marginTop: '1rem' }}>Detecting extreme regimes...</p>
                     </div>
                   </td>
                 </tr>
@@ -241,4 +275,5 @@ const RegimeScreenerPage: React.FC = () => {
   );
 };
 
-export default RegimeScreenerPage;
+export default ExtremeRegimesPage;
+

@@ -201,6 +201,21 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
+  overflow-y: auto;
+}
+
+.nav-section-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  padding: var(--space-lg) var(--space-lg) var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.nav-section-label:first-child {
+  margin-top: 0;
 }
 
 .nav-link {
@@ -346,6 +361,16 @@ a:hover {
 .page-description {
   color: var(--text-secondary);
   font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.page-description code {
+  background: var(--accent-primary-dim);
+  color: var(--accent-primary);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
 }
 
 /* ============================================

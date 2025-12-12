@@ -10,29 +10,9 @@ interface SymbolOverviewRow {
   avg_kline_volume: number;
 }
 
-const DatabaseIcon = () => (
-  <svg className="page-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-  </svg>
-);
-
-const PlayIcon = () => (
-  <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-  </svg>
-);
-
-const EmptyIcon = () => (
-  <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
-  </svg>
-);
-
-const DataAdminPage: React.FC = () => {
-  const [startTs, setStartTs] = useState('2024-01-01T00:00:00Z');
-  const [endTs, setEndTs] = useState('2024-01-31T23:59:59Z');
+const SymbolDashboardPage: React.FC = () => {
+  const [startDate, setStartDate] = useState('2024-01-01');
+  const [endDate, setEndDate] = useState('2024-01-31');
   const [data, setData] = useState<SymbolOverviewRow[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -40,7 +20,10 @@ const DataAdminPage: React.FC = () => {
     setLoading(true);
     try {
       const res = await axios.get<SymbolOverviewRow[]>(`${API_BASE}/api/symbol_overview`, {
-        params: { start_ts: startTs, end_ts: endTs },
+        params: { 
+          start_ts: `${startDate}T00:00:00Z`, 
+          end_ts: `${endDate}T23:59:59Z` 
+        },
       });
       setData(res.data);
     } catch (e) {
@@ -51,12 +34,11 @@ const DataAdminPage: React.FC = () => {
   };
 
   const formatVolume = (value: number) => {
-    if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(2)}M`;
-    } else if (value >= 1000) {
-      return `${(value / 1000).toFixed(2)}K`;
-    }
-    return value?.toFixed(2) || '-';
+    if (!value) return '-';
+    if (value >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
+    if (value >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
+    if (value >= 1e3) return `${(value / 1e3).toFixed(2)}K`;
+    return value.toFixed(2);
   };
 
   // Calculate stats
@@ -71,12 +53,16 @@ const DataAdminPage: React.FC = () => {
     <div className="animate-fade-in">
       <div className="page-header">
         <h1 className="page-title">
-          <DatabaseIcon />
-          Data Administration
+          <svg className="page-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
+          Symbol Dashboard
         </h1>
         <p className="page-description">
-          Monitor data quality and coverage across all symbols. View row counts, funding events, 
-          and liquidity metrics for your selected date range.
+          View aggregated statistics across all symbols using pre-computed <code>mv_symbol_daily_stats</code>.
+          15-20x faster than on-the-fly aggregations.
         </p>
       </div>
 
@@ -106,24 +92,25 @@ const DataAdminPage: React.FC = () => {
       <div className="card mb-xl">
         <div className="card-header">
           <h3 className="card-title">Query Parameters</h3>
+          <span className="badge badge-success">⚡ &lt;1s</span>
         </div>
         <div className="form-grid">
           <div className="form-group">
-            <label className="form-label">Start Timestamp</label>
+            <label className="form-label">Start Date</label>
             <input
               className="form-input"
-              value={startTs}
-              onChange={(e) => setStartTs(e.target.value)}
-              placeholder="YYYY-MM-DDTHH:MM:SSZ"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
           <div className="form-group">
-            <label className="form-label">End Timestamp</label>
+            <label className="form-label">End Date</label>
             <input
               className="form-input"
-              value={endTs}
-              onChange={(e) => setEndTs(e.target.value)}
-              placeholder="YYYY-MM-DDTHH:MM:SSZ"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
           <div className="form-group" style={{ justifyContent: 'flex-end' }}>
@@ -135,7 +122,9 @@ const DataAdminPage: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <PlayIcon />
+                  <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
                   Load Data
                 </>
               )}
@@ -199,7 +188,11 @@ const DataAdminPage: React.FC = () => {
                 <tr>
                   <td colSpan={5}>
                     <div className="empty-state">
-                      <EmptyIcon />
+                      <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                      </svg>
                       <p>No data loaded. Select a date range and click Load Data.</p>
                     </div>
                   </td>
@@ -224,7 +217,7 @@ const DataAdminPage: React.FC = () => {
       {data.length > 0 && (
         <div className="card" style={{ marginTop: 'var(--space-xl)' }}>
           <div className="card-header">
-            <h3 className="card-title">Database Information</h3>
+            <h3 className="card-title">Materialized View Info</h3>
           </div>
           <div style={{ 
             display: 'grid', 
@@ -237,10 +230,10 @@ const DataAdminPage: React.FC = () => {
               borderRadius: 'var(--radius-md)'
             }}>
               <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 'var(--space-xs)' }}>
-                Database
+                Source View
               </div>
               <div className="font-mono" style={{ color: 'var(--accent-primary)' }}>
-                PostgreSQL (AWS RDS)
+                mv_symbol_daily_stats
               </div>
             </div>
             <div style={{
@@ -249,10 +242,10 @@ const DataAdminPage: React.FC = () => {
               borderRadius: 'var(--radius-md)'
             }}>
               <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 'var(--space-xs)' }}>
-                Tables
+                Optimization
               </div>
               <div className="font-mono">
-                symbols, klines, funding, minute_returns
+                Pre-aggregated daily stats
               </div>
             </div>
             <div style={{
@@ -264,7 +257,7 @@ const DataAdminPage: React.FC = () => {
                 Date Range
               </div>
               <div className="font-mono" style={{ fontSize: '0.85rem' }}>
-                {new Date(startTs).toLocaleDateString()} - {new Date(endTs).toLocaleDateString()}
+                {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
               </div>
             </div>
           </div>
@@ -274,4 +267,5 @@ const DataAdminPage: React.FC = () => {
   );
 };
 
-export default DataAdminPage;
+export default SymbolDashboardPage;
+

@@ -8,6 +8,7 @@ import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import time
 
 # Import auth utilities
 from auth import (
@@ -47,6 +48,22 @@ def run_query(sql: str, params: tuple) -> List[Dict[str, Any]]:
             cur.execute(sql, params)
             rows = cur.fetchall()
         return [dict(r) for r in rows]
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Query failed: {e}")
+    finally:
+        conn.close()
+
+
+def run_query_timed(sql: str, params: tuple) -> tuple[List[Dict[str, Any]], float]:
+    """Run query and return results with execution time in ms."""
+    conn = get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            start = time.time()
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            elapsed_ms = (time.time() - start) * 1000
+        return [dict(r) for r in rows], elapsed_ms
     except psycopg2.Error as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {e}")
     finally:
@@ -177,8 +194,14 @@ def list_symbols() -> List[Dict[str, Any]]:
     return run_query(sql, ())
 
 
+# ===================================================================
+# OPTIMIZED QUERIES (Using Materialized Views)
+# Based on queries_milestone4.sql PART 3
+# ===================================================================
+
 # -------------------------------------------------------------------
-# Query 1 – Event CAR around funding events (Event Study Explorer)
+# FAST Query 1: CAR Around Funding Events (OPTIMIZED)
+# Uses pre-computed mv_event_car
 # -------------------------------------------------------------------
 @app.get("/api/event_car")
 def get_event_car(
@@ -189,38 +212,17 @@ def get_event_car(
     """
     For each funding event of `symbol` in [start_ts, end_ts],
     return the min/max cumulative return in [-60, +180] minutes.
+    Uses pre-computed mv_event_car materialized view.
     """
     sql = """
-        WITH funding_events AS (
-            SELECT
-                symbol,
-                ts AS event_ts
-            FROM funding
-            WHERE symbol = %s
-              AND ts BETWEEN %s AND %s
-        ),
-        window_returns AS (
-            SELECT
-                f.symbol,
-                f.event_ts,
-                mr.ts,
-                SUM(mr.r1m) OVER (
-                    PARTITION BY f.symbol, f.event_ts
-                    ORDER BY mr.ts
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS cum_return
-            FROM funding_events f
-            JOIN minute_returns mr
-              ON mr.symbol = f.symbol
-             AND mr.ts BETWEEN f.event_ts - INTERVAL '60 minutes'
-                           AND f.event_ts + INTERVAL '180 minutes'
-        )
         SELECT
             symbol,
             event_ts,
-            MIN(cum_return) AS min_car,
-            MAX(cum_return) AS max_car
-        FROM window_returns
+            MIN(car) AS min_car,
+            MAX(car) AS max_car
+        FROM mv_event_car
+        WHERE symbol = %s
+          AND event_ts BETWEEN %s AND %s
         GROUP BY symbol, event_ts
         ORDER BY event_ts;
     """
@@ -228,16 +230,282 @@ def get_event_car(
 
 
 # -------------------------------------------------------------------
-# Query 2 – Funding rate deciles vs 60m post-event drift
-# (nice for Regime Screener)
+# FAST Query 2: Funding Rate Deciles vs 60m Drift (OPTIMIZED)
+# Uses pre-computed mv_funding_deciles and mv_event_markouts
 # -------------------------------------------------------------------
 @app.get("/api/funding_deciles")
 def get_funding_deciles(
     start_ts: datetime,
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
+    """
+    Analyze how funding rate deciles relate to 60-minute markouts.
+    Uses pre-computed materialized views for fast execution.
+    """
     sql = """
-        WITH funding_with_decile AS (
+        SELECT
+            fd.rate_decile,
+            AVG(em.markout_60m) AS avg_markout_60m,
+            COUNT(*) AS n_events
+        FROM mv_funding_deciles fd
+        JOIN mv_event_markouts em
+          ON em.symbol = fd.symbol
+         AND em.event_ts = fd.ts
+        WHERE fd.ts BETWEEN %s AND %s
+        GROUP BY fd.rate_decile
+        ORDER BY fd.rate_decile;
+    """
+    return run_query(sql, (start_ts, end_ts))
+
+
+# -------------------------------------------------------------------
+# FAST Query 3: Extreme Regime Detection (OPTIMIZED)
+# Uses pre-computed mv_daily_rate_stats, mv_rolling_oi_stats, mv_event_markouts
+# -------------------------------------------------------------------
+@app.get("/api/extreme_regimes")
+def get_extreme_regimes(
+    start_ts: datetime,
+    end_ts: datetime,
+    min_events: int = 5,
+    top_k: int = 10,
+) -> List[Dict[str, Any]]:
+    """
+    Identify symbols with extreme funding regimes (high |rate| AND high OI).
+    Uses pre-computed materialized views for regime detection.
+    """
+    sql = """
+        WITH regime_events AS (
+            SELECT
+                f.symbol,
+                f.ts
+            FROM funding f
+            JOIN mv_daily_rate_stats dr
+              ON dr.symbol = f.symbol
+             AND dr.d = DATE(f.ts)
+            JOIN mv_rolling_oi_stats oi
+              ON oi.symbol = f.symbol
+             AND oi.ts = f.ts
+            WHERE f.ts BETWEEN %s AND %s
+              AND ABS(f.rate) > dr.p90_abs_rate
+              AND oi.oi > oi.p90_oi_14d
+        )
+        SELECT
+            r.symbol,
+            AVG(em.markout_60m) AS avg_markout_60m,
+            COUNT(*) AS n_events
+        FROM regime_events r
+        JOIN mv_event_markouts em
+          ON em.symbol = r.symbol
+         AND em.event_ts = r.ts
+        GROUP BY r.symbol
+        HAVING COUNT(*) >= %s
+        ORDER BY avg_markout_60m DESC
+        LIMIT %s;
+    """
+    return run_query(sql, (start_ts, end_ts, min_events, top_k))
+
+
+# -------------------------------------------------------------------
+# FAST Query 4: Symbols with No Negative CAR in Low-Vol (OPTIMIZED)
+# Uses pre-computed mv_event_volatility
+# -------------------------------------------------------------------
+@app.get("/api/low_vol_safe_symbols")
+def get_low_vol_safe_symbols(
+    start_ts: datetime,
+    end_ts: datetime,
+) -> List[Dict[str, Any]]:
+    """
+    Find symbols that never have negative 30m CAR during low volatility regimes.
+    Uses pre-computed mv_event_volatility materialized view.
+    """
+    sql = """
+        WITH median_rv AS (
+            SELECT
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY rv_1d) AS med_rv
+            FROM mv_event_volatility
+            WHERE ts BETWEEN %s AND %s
+        )
+        SELECT DISTINCT ev.symbol
+        FROM mv_event_volatility ev,
+             median_rv m
+        WHERE ev.ts BETWEEN %s AND %s
+          AND NOT EXISTS (
+            SELECT 1
+            FROM minute_returns mr
+            WHERE mr.symbol = ev.symbol
+              AND mr.ts > ev.ts
+              AND mr.ts <= ev.ts + INTERVAL '30 minutes'
+              AND mr.r1m < 0
+              AND ev.rv_1d < m.med_rv
+        )
+        ORDER BY ev.symbol;
+    """
+    return run_query(sql, (start_ts, end_ts, start_ts, end_ts))
+
+
+# -------------------------------------------------------------------
+# FAST Query 5: Hour-of-Day Markout Analysis (OPTIMIZED)
+# Uses pre-computed mv_event_markouts
+# -------------------------------------------------------------------
+@app.get("/api/hourly_markouts")
+def get_hourly_markouts(
+    start_ts: datetime,
+    end_ts: datetime,
+) -> List[Dict[str, Any]]:
+    """
+    Analyze average 60-minute markouts by hour of day.
+    Uses pre-computed mv_event_markouts materialized view.
+    """
+    sql = """
+        SELECT
+            EXTRACT(HOUR FROM event_ts) AS funding_hour,
+            AVG(markout_60m) AS avg_markout_60m,
+            COUNT(*) AS n_events
+        FROM mv_event_markouts
+        WHERE event_ts BETWEEN %s AND %s
+        GROUP BY funding_hour
+        ORDER BY funding_hour;
+    """
+    return run_query(sql, (start_ts, end_ts))
+
+
+# -------------------------------------------------------------------
+# FAST Query 6: Volatility Regime Conditioning (OPTIMIZED)
+# Uses pre-computed mv_event_volatility and mv_event_markouts
+# -------------------------------------------------------------------
+@app.get("/api/vol_regime_markouts")
+def get_vol_regime_markouts(
+    start_ts: datetime,
+    end_ts: datetime,
+) -> List[Dict[str, Any]]:
+    """
+    Analyze markouts by pre-event volatility regime (low/medium/high).
+    Uses pre-computed materialized views for fast execution.
+    """
+    sql = """
+        SELECT
+            ev.vol_regime,
+            AVG(em.markout_60m) AS avg_markout_60m,
+            COUNT(*) AS n_events
+        FROM mv_event_volatility ev
+        JOIN mv_event_markouts em
+          ON em.symbol = ev.symbol
+         AND em.event_ts = ev.ts
+        WHERE ev.ts BETWEEN %s AND %s
+        GROUP BY ev.vol_regime
+        ORDER BY ev.vol_regime;
+    """
+    return run_query(sql, (start_ts, end_ts))
+
+
+# -------------------------------------------------------------------
+# FAST Query 7: Symbol Overview and Liquidity Stats (OPTIMIZED)
+# Uses pre-computed mv_symbol_daily_stats
+# -------------------------------------------------------------------
+@app.get("/api/symbol_overview")
+def get_symbol_overview(
+    start_ts: datetime,
+    end_ts: datetime,
+) -> List[Dict[str, Any]]:
+    """
+    Get aggregated statistics for all symbols.
+    Uses pre-computed mv_symbol_daily_stats materialized view.
+    """
+    sql = """
+        SELECT
+            symbol,
+            SUM(n_klines) AS n_klines,
+            SUM(n_funding_events) AS n_funding_events,
+            AVG(avg_volume) AS avg_kline_volume
+        FROM mv_symbol_daily_stats
+        WHERE d BETWEEN %s AND %s
+        GROUP BY symbol
+        ORDER BY symbol;
+    """
+    return run_query(sql, (start_ts, end_ts))
+
+
+# ===================================================================
+# SLOW QUERIES (For Performance Comparison)
+# Based on queries_milestone4.sql PART 1
+# ===================================================================
+
+# -------------------------------------------------------------------
+# SLOW Query 1: CAR Around Funding Events
+# -------------------------------------------------------------------
+@app.get("/api/slow/event_car")
+def get_event_car_slow(
+    symbol: str,
+    start_ts: datetime,
+    end_ts: datetime,
+) -> Dict[str, Any]:
+    """
+    Slow version of event CAR query for performance comparison.
+    Returns results with execution time.
+    """
+    sql = """
+        WITH all_funding AS (
+            SELECT
+                symbol,
+                ts AS event_ts
+            FROM funding
+        ),
+        all_returns_window AS (
+            SELECT
+                f.symbol,
+                f.event_ts,
+                mr.ts,
+                mr.r1m,
+                CASE
+                    WHEN mr.ts >= f.event_ts THEN mr.r1m
+                    ELSE 0
+                END AS post_ret
+            FROM all_funding f
+            JOIN minute_returns mr
+              ON mr.symbol = f.symbol
+             AND mr.ts BETWEEN f.event_ts - INTERVAL '60 minutes'
+                           AND f.event_ts + INTERVAL '180 minutes'
+        ),
+        car_series AS (
+            SELECT
+                symbol,
+                event_ts,
+                ts,
+                SUM(post_ret) OVER (
+                    PARTITION BY symbol, event_ts
+                    ORDER BY ts
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS car
+            FROM all_returns_window
+        )
+        SELECT
+            symbol,
+            event_ts,
+            MIN(car) AS min_car,
+            MAX(car) AS max_car
+        FROM car_series
+        WHERE symbol = %s
+          AND event_ts BETWEEN %s AND %s
+        GROUP BY symbol, event_ts
+        ORDER BY event_ts;
+    """
+    results, elapsed_ms = run_query_timed(sql, (symbol, start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
+
+
+# -------------------------------------------------------------------
+# SLOW Query 2: Funding Rate Deciles vs 60m Drift
+# -------------------------------------------------------------------
+@app.get("/api/slow/funding_deciles")
+def get_funding_deciles_slow(
+    start_ts: datetime,
+    end_ts: datetime,
+) -> Dict[str, Any]:
+    """
+    Slow version of funding deciles query for performance comparison.
+    """
+    sql = """
+        WITH all_funding_with_decile AS (
             SELECT
                 symbol,
                 ts,
@@ -247,15 +515,14 @@ def get_funding_deciles(
                     ORDER BY rate
                 ) AS rate_decile
             FROM funding
-            WHERE ts BETWEEN %s AND %s
         ),
-        event_markouts AS (
+        all_event_markouts AS (
             SELECT
                 f.symbol,
                 f.ts,
                 f.rate_decile,
                 SUM(mr.r1m) AS markout_60m
-            FROM funding_with_decile f
+            FROM all_funding_with_decile f
             JOIN minute_returns mr
               ON mr.symbol = f.symbol
              AND mr.ts > f.ts
@@ -266,120 +533,28 @@ def get_funding_deciles(
             rate_decile,
             AVG(markout_60m) AS avg_markout_60m,
             COUNT(*) AS n_events
-        FROM event_markouts
+        FROM all_event_markouts
+        WHERE ts BETWEEN %s AND %s
         GROUP BY rate_decile
         ORDER BY rate_decile;
     """
-    return run_query(sql, (start_ts, end_ts))
+    results, elapsed_ms = run_query_timed(sql, (start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
 
 
 # -------------------------------------------------------------------
-# Query 3 – Stress regimes based on high |funding| only
+# SLOW Query 5: Hour-of-Day Markout Analysis
 # -------------------------------------------------------------------
-@app.get("/api/regime_stress")
-def get_regime_stress(
+@app.get("/api/slow/hourly_markouts")
+def get_hourly_markouts_slow(
     start_ts: datetime,
     end_ts: datetime,
-    min_events: int = 10,
-    top_k: int = 20,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
-    Identify symbols whose funding events have extreme |rate|
-    and compute average 60m post-event markouts in those regimes.
-    Extreme is defined as |rate| above the 90th percentile over
-    the requested window.
+    Slow version of hourly markouts query for performance comparison.
     """
     sql = """
-        WITH rate_stats AS (
-            SELECT
-                PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY ABS(rate)) AS p90_abs_rate
-            FROM funding
-            WHERE ts BETWEEN %s AND %s
-        ),
-        regime_events AS (
-            SELECT
-                f.symbol,
-                f.ts
-            FROM funding f, rate_stats rs
-            WHERE f.ts BETWEEN %s AND %s
-              AND ABS(f.rate) > rs.p90_abs_rate
-        ),
-        event_markouts AS (
-            SELECT
-                r.symbol,
-                r.ts,
-                SUM(mr.r1m) AS markout_60m
-            FROM regime_events r
-            JOIN minute_returns mr
-              ON mr.symbol = r.symbol
-             AND mr.ts > r.ts
-             AND mr.ts <= r.ts + INTERVAL '60 minutes'
-            GROUP BY r.symbol, r.ts
-        )
-        SELECT
-            symbol,
-            AVG(markout_60m) AS avg_markout_60m,
-            COUNT(*) AS n_events
-        FROM event_markouts
-        GROUP BY symbol
-        HAVING COUNT(*) >= %s
-        ORDER BY avg_markout_60m DESC
-        LIMIT %s;
-    """
-    return run_query(sql, (start_ts, end_ts, start_ts, end_ts, min_events, top_k))
-
-# -------------------------------------------------------------------
-# Query 4 – Symbols that never have negative 30m CAR in low-vol regimes
-# -------------------------------------------------------------------
-@app.get("/api/never_negative_lowvol")
-def get_never_negative_lowvol(
-    start_ts: datetime,
-    end_ts: datetime,
-) -> List[Dict[str, Any]]:
-    sql = """
-        WITH funding_rv AS (
-            SELECT
-                f.symbol,
-                f.ts,
-                STDDEV_SAMP(mr.r1m) AS rv_1d
-            FROM funding f
-            JOIN minute_returns mr
-              ON mr.symbol = f.symbol
-             AND mr.ts BETWEEN f.ts - INTERVAL '1 day' AND f.ts
-            WHERE f.ts BETWEEN %s AND %s
-            GROUP BY f.symbol, f.ts
-        ),
-        median_rv AS (
-            SELECT
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY rv_1d) AS med_rv
-            FROM funding_rv
-        )
-        SELECT DISTINCT fr.symbol
-        FROM funding_rv fr, median_rv m
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM minute_returns mr
-            WHERE mr.symbol = fr.symbol
-              AND mr.ts > fr.ts
-              AND mr.ts <= fr.ts + INTERVAL '30 minutes'
-              AND mr.r1m < 0
-              AND fr.rv_1d < m.med_rv
-        )
-        ORDER BY fr.symbol;
-    """
-    return run_query(sql, (start_ts, end_ts))
-
-
-# -------------------------------------------------------------------
-# Query 5 – Hour-of-day markouts
-# -------------------------------------------------------------------
-@app.get("/api/hourly_markouts")
-def get_hourly_markouts(
-    start_ts: datetime,
-    end_ts: datetime,
-) -> List[Dict[str, Any]]:
-    sql = """
-        WITH event_markouts AS (
+        WITH all_event_markouts AS (
             SELECT
                 f.symbol,
                 f.ts,
@@ -389,30 +564,34 @@ def get_hourly_markouts(
               ON mr.symbol = f.symbol
              AND mr.ts > f.ts
              AND mr.ts <= f.ts + INTERVAL '60 minutes'
-            WHERE f.ts BETWEEN %s AND %s
             GROUP BY f.symbol, f.ts
         )
         SELECT
             EXTRACT(HOUR FROM ts) AS funding_hour,
             AVG(markout_60m) AS avg_markout_60m,
             COUNT(*) AS n_events
-        FROM event_markouts
+        FROM all_event_markouts
+        WHERE ts BETWEEN %s AND %s
         GROUP BY funding_hour
         ORDER BY funding_hour;
     """
-    return run_query(sql, (start_ts, end_ts))
+    results, elapsed_ms = run_query_timed(sql, (start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
 
 
 # -------------------------------------------------------------------
-# Query 6 – Markouts by short-term volatility regime (1h pre)
+# SLOW Query 6: Volatility Regime Conditioning
 # -------------------------------------------------------------------
-@app.get("/api/vol_regime_markouts")
-def get_vol_regime_markouts(
+@app.get("/api/slow/vol_regime_markouts")
+def get_vol_regime_markouts_slow(
     start_ts: datetime,
     end_ts: datetime,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
+    """
+    Slow version of volatility regime query for performance comparison.
+    """
     sql = """
-        WITH event_vol AS (
+        WITH all_event_vol AS (
             SELECT
                 f.symbol,
                 f.ts,
@@ -430,7 +609,7 @@ def get_vol_regime_markouts(
                 ts,
                 rv_1h,
                 NTILE(3) OVER (ORDER BY rv_1h) AS vol_regime
-            FROM event_vol
+            FROM all_event_vol
         ),
         event_markouts AS (
             SELECT
@@ -456,121 +635,161 @@ def get_vol_regime_markouts(
         GROUP BY vol_regime
         ORDER BY vol_regime;
     """
-    return run_query(sql, (start_ts, end_ts, start_ts, end_ts))
+    results, elapsed_ms = run_query_timed(sql, (start_ts, end_ts, start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
 
 
 # -------------------------------------------------------------------
-# Query 7 – Symbol overview (for Data Admin page)
+# SLOW Query 7: Symbol Overview
 # -------------------------------------------------------------------
-@app.get("/api/symbol_overview")
-def get_symbol_overview(
+@app.get("/api/slow/symbol_overview")
+def get_symbol_overview_slow(
     start_ts: datetime,
     end_ts: datetime,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
+    """
+    Slow version of symbol overview query for performance comparison.
+    """
     sql = """
+        WITH all_klines AS (
+            SELECT
+                symbol,
+                open_time,
+                volume
+            FROM klines
+        ),
+        all_funding AS (
+            SELECT
+                symbol,
+                ts
+            FROM funding
+        )
         SELECT
             s.symbol,
             COUNT(DISTINCT k.open_time) AS n_klines,
             COUNT(DISTINCT f.ts) AS n_funding_events,
             AVG(k.volume) AS avg_kline_volume
         FROM symbols s
-        LEFT JOIN klines k
+        LEFT JOIN all_klines k
           ON k.symbol = s.symbol
-        LEFT JOIN funding f
+        LEFT JOIN all_funding f
           ON f.symbol = s.symbol
         WHERE k.open_time BETWEEN %s AND %s
         GROUP BY s.symbol
         ORDER BY s.symbol;
     """
-    return run_query(sql, (start_ts, end_ts))
+    results, elapsed_ms = run_query_timed(sql, (start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
 
 
 # -------------------------------------------------------------------
-# Query 8 – Top symbols by average |funding rate|
+# FAST Query Timed Versions (For Performance Comparison Dashboard)
 # -------------------------------------------------------------------
-@app.get("/api/top_funding_pressure")
-def get_top_funding_pressure(
+@app.get("/api/fast/event_car")
+def get_event_car_fast_timed(
+    symbol: str,
     start_ts: datetime,
     end_ts: datetime,
-    min_events: int = 50,
-    top_k: int = 20,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
+    """Fast event CAR with timing."""
     sql = """
         SELECT
             symbol,
-            AVG(ABS(rate)) AS avg_abs_rate,
+            event_ts,
+            MIN(car) AS min_car,
+            MAX(car) AS max_car
+        FROM mv_event_car
+        WHERE symbol = %s
+          AND event_ts BETWEEN %s AND %s
+        GROUP BY symbol, event_ts
+        ORDER BY event_ts;
+    """
+    results, elapsed_ms = run_query_timed(sql, (symbol, start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
+
+
+@app.get("/api/fast/funding_deciles")
+def get_funding_deciles_fast_timed(
+    start_ts: datetime,
+    end_ts: datetime,
+) -> Dict[str, Any]:
+    """Fast funding deciles with timing."""
+    sql = """
+        SELECT
+            fd.rate_decile,
+            AVG(em.markout_60m) AS avg_markout_60m,
             COUNT(*) AS n_events
-        FROM funding
-        WHERE ts BETWEEN %s AND %s
-        GROUP BY symbol
-        HAVING COUNT(*) >= %s
-        ORDER BY avg_abs_rate DESC
-        LIMIT %s;
+        FROM mv_funding_deciles fd
+        JOIN mv_event_markouts em
+          ON em.symbol = fd.symbol
+         AND em.event_ts = fd.ts
+        WHERE fd.ts BETWEEN %s AND %s
+        GROUP BY fd.rate_decile
+        ORDER BY fd.rate_decile;
     """
-    return run_query(sql, (start_ts, end_ts, min_events, top_k))
+    results, elapsed_ms = run_query_timed(sql, (start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
 
 
-# -------------------------------------------------------------------
-# Query 9 – Average 30m realized volatility after funding
-# -------------------------------------------------------------------
-@app.get("/api/post_event_volatility")
-def get_post_event_volatility(
+@app.get("/api/fast/hourly_markouts")
+def get_hourly_markouts_fast_timed(
     start_ts: datetime,
     end_ts: datetime,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
+    """Fast hourly markouts with timing."""
     sql = """
-        WITH event_rv AS (
-            SELECT
-                f.symbol,
-                f.ts,
-                STDDEV_SAMP(mr.r1m) AS rv_30m
-            FROM funding f
-            JOIN minute_returns mr
-              ON mr.symbol = f.symbol
-             AND mr.ts BETWEEN f.ts AND f.ts + INTERVAL '30 minutes'
-            WHERE f.ts BETWEEN %s AND %s
-            GROUP BY f.symbol, f.ts
-        )
         SELECT
-            symbol,
-            AVG(rv_30m) AS avg_rv_30m,
+            EXTRACT(HOUR FROM event_ts) AS funding_hour,
+            AVG(markout_60m) AS avg_markout_60m,
             COUNT(*) AS n_events
-        FROM event_rv
-        GROUP BY symbol
-        ORDER BY avg_rv_30m DESC;
+        FROM mv_event_markouts
+        WHERE event_ts BETWEEN %s AND %s
+        GROUP BY funding_hour
+        ORDER BY funding_hour;
     """
-    return run_query(sql, (start_ts, end_ts))
+    results, elapsed_ms = run_query_timed(sql, (start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
 
 
-# -------------------------------------------------------------------
-# Query 10 – Count events where 30m CAR exceeds a threshold
-# -------------------------------------------------------------------
-@app.get("/api/positive_moves")
-def get_positive_moves(
+@app.get("/api/fast/vol_regime_markouts")
+def get_vol_regime_markouts_fast_timed(
     start_ts: datetime,
     end_ts: datetime,
-    car_threshold: float = 0.01,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
+    """Fast volatility regime markouts with timing."""
     sql = """
-        WITH event_car AS (
-            SELECT
-                f.symbol,
-                f.ts,
-                SUM(mr.r1m) AS car_30m
-            FROM funding f
-            JOIN minute_returns mr
-              ON mr.symbol = f.symbol
-             AND mr.ts > f.ts
-             AND mr.ts <= f.ts + INTERVAL '30 minutes'
-            WHERE f.ts BETWEEN %s AND %s
-            GROUP BY f.symbol, f.ts
-        )
+        SELECT
+            ev.vol_regime,
+            AVG(em.markout_60m) AS avg_markout_60m,
+            COUNT(*) AS n_events
+        FROM mv_event_volatility ev
+        JOIN mv_event_markouts em
+          ON em.symbol = ev.symbol
+         AND em.event_ts = ev.ts
+        WHERE ev.ts BETWEEN %s AND %s
+        GROUP BY ev.vol_regime
+        ORDER BY ev.vol_regime;
+    """
+    results, elapsed_ms = run_query_timed(sql, (start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}
+
+
+@app.get("/api/fast/symbol_overview")
+def get_symbol_overview_fast_timed(
+    start_ts: datetime,
+    end_ts: datetime,
+) -> Dict[str, Any]:
+    """Fast symbol overview with timing."""
+    sql = """
         SELECT
             symbol,
-            COUNT(*) AS n_positive_moves
-        FROM event_car
-        WHERE car_30m > %s
+            SUM(n_klines) AS n_klines,
+            SUM(n_funding_events) AS n_funding_events,
+            AVG(avg_volume) AS avg_kline_volume
+        FROM mv_symbol_daily_stats
+        WHERE d BETWEEN %s AND %s
         GROUP BY symbol
-        ORDER BY n_positive_moves DESC;
+        ORDER BY symbol;
     """
-    return run_query(sql, (start_ts, end_ts, car_threshold))
+    results, elapsed_ms = run_query_timed(sql, (start_ts, end_ts))
+    return {"results": results, "execution_time_ms": elapsed_ms}

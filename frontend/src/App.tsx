@@ -3,10 +3,12 @@ import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import EventStudyPage from './pages/EventStudyPage';
-import RegimeScreenerPage from './pages/RegimeScreenerPage';
-import RulesLabPage from './pages/RulesLabPage';
-import TimingsPage from './pages/TimingsPage';
-import DataAdminPage from './pages/DataAdminPage';
+import FundingDecilesPage from './pages/FundingDecilesPage';
+import ExtremeRegimesPage from './pages/ExtremeRegimesPage';
+import HourlyAnalysisPage from './pages/HourlyAnalysisPage';
+import VolatilityRegimesPage from './pages/VolatilityRegimesPage';
+import SymbolDashboardPage from './pages/SymbolDashboardPage';
+import QueryPerformancePage from './pages/QueryPerformancePage';
 import './styles.css';
 
 // Icons as SVG components
@@ -18,17 +20,18 @@ const ChartIcon = () => (
   </svg>
 );
 
-const FilterIcon = () => (
+const DecileIcon = () => (
   <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+    <path d="M3 3v18h18"></path>
+    <path d="M18 17V9"></path>
+    <path d="M13 17V5"></path>
+    <path d="M8 17v-3"></path>
   </svg>
 );
 
-const BeakerIcon = () => (
+const BoltIcon = () => (
   <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4.5 3h15"></path>
-    <path d="M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3"></path>
-    <path d="M6 14h12"></path>
+    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
   </svg>
 );
 
@@ -39,11 +42,23 @@ const ClockIcon = () => (
   </svg>
 );
 
+const ActivityIcon = () => (
+  <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+  </svg>
+);
+
 const DatabaseIcon = () => (
   <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
     <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
     <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+  </svg>
+);
+
+const SpeedometerIcon = () => (
+  <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
   </svg>
 );
 
@@ -111,25 +126,36 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
 
         <nav className="sidebar-nav">
+          <div className="nav-section-label">Analysis</div>
           <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <ChartIcon />
             <span>Event Study</span>
           </NavLink>
-          <NavLink to="/regimes" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <FilterIcon />
-            <span>Regime Screener</span>
+          <NavLink to="/deciles" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <DecileIcon />
+            <span>Funding Deciles</span>
           </NavLink>
-          <NavLink to="/rules" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            <BeakerIcon />
-            <span>Rules Lab</span>
+          <NavLink to="/extreme" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <BoltIcon />
+            <span>Extreme Regimes</span>
           </NavLink>
-          <NavLink to="/timings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/hourly" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <ClockIcon />
-            <span>Timings</span>
+            <span>Hourly Analysis</span>
           </NavLink>
-          <NavLink to="/admin" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/volatility" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <ActivityIcon />
+            <span>Vol Regimes</span>
+          </NavLink>
+          
+          <div className="nav-section-label">Data</div>
+          <NavLink to="/symbols" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <DatabaseIcon />
-            <span>Data Admin</span>
+            <span>Symbol Dashboard</span>
+          </NavLink>
+          <NavLink to="/performance" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <SpeedometerIcon />
+            <span>Query Performance</span>
           </NavLink>
         </nav>
 
@@ -174,41 +200,61 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route
-        path="/regimes"
+        path="/deciles"
         element={
           <ProtectedRoute>
             <MainLayout>
-              <RegimeScreenerPage />
+              <FundingDecilesPage />
             </MainLayout>
           </ProtectedRoute>
         }
       />
       <Route
-        path="/rules"
+        path="/extreme"
         element={
           <ProtectedRoute>
             <MainLayout>
-              <RulesLabPage />
+              <ExtremeRegimesPage />
             </MainLayout>
           </ProtectedRoute>
         }
       />
       <Route
-        path="/timings"
+        path="/hourly"
         element={
           <ProtectedRoute>
             <MainLayout>
-              <TimingsPage />
+              <HourlyAnalysisPage />
             </MainLayout>
           </ProtectedRoute>
         }
       />
       <Route
-        path="/admin"
+        path="/volatility"
         element={
           <ProtectedRoute>
             <MainLayout>
-              <DataAdminPage />
+              <VolatilityRegimesPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/symbols"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <SymbolDashboardPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/performance"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <QueryPerformancePage />
             </MainLayout>
           </ProtectedRoute>
         }
