@@ -18,8 +18,7 @@ from auth import (
 )
 
 # -------------------------------------------------------------------
-# DB CONFIG – update these to match your RDS instance
-# (you can also pull them from a .env file or your environment)
+# DB CONFIG
 # -------------------------------------------------------------------
 DB_HOST = os.getenv("DB_HOST", "cis550-project-db.c1am6gascgf2.us-east-1.rds.amazonaws.com")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
