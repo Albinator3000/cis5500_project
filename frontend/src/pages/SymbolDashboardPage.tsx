@@ -61,8 +61,7 @@ const SymbolDashboardPage: React.FC = () => {
           Symbol Dashboard
         </h1>
         <p className="page-description">
-          View aggregated statistics across all symbols using pre-computed <code>mv_symbol_daily_stats</code>.
-          15-20x faster than on-the-fly aggregations.
+          View aggregated statistics across all symbols including kline counts, funding events, and volume data.
         </p>
       </div>
 
@@ -92,7 +91,6 @@ const SymbolDashboardPage: React.FC = () => {
       <div className="card mb-xl">
         <div className="card-header">
           <h3 className="card-title">Query Parameters</h3>
-          <span className="badge badge-success">⚡ &lt;1s</span>
         </div>
         <div className="form-grid">
           <div className="form-group">
@@ -213,56 +211,6 @@ const SymbolDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Database Info Card */}
-      {data.length > 0 && (
-        <div className="card" style={{ marginTop: 'var(--space-xl)' }}>
-          <div className="card-header">
-            <h3 className="card-title">Materialized View Info</h3>
-          </div>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: 'var(--space-lg)'
-          }}>
-            <div style={{
-              padding: 'var(--space-lg)',
-              background: 'var(--bg-secondary)',
-              borderRadius: 'var(--radius-md)'
-            }}>
-              <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 'var(--space-xs)' }}>
-                Source View
-              </div>
-              <div className="font-mono" style={{ color: 'var(--accent-primary)' }}>
-                mv_symbol_daily_stats
-              </div>
-            </div>
-            <div style={{
-              padding: 'var(--space-lg)',
-              background: 'var(--bg-secondary)',
-              borderRadius: 'var(--radius-md)'
-            }}>
-              <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 'var(--space-xs)' }}>
-                Optimization
-              </div>
-              <div className="font-mono">
-                Pre-aggregated daily stats
-              </div>
-            </div>
-            <div style={{
-              padding: 'var(--space-lg)',
-              background: 'var(--bg-secondary)',
-              borderRadius: 'var(--radius-md)'
-            }}>
-              <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: 'var(--space-xs)' }}>
-                Date Range
-              </div>
-              <div className="font-mono" style={{ fontSize: '0.85rem' }}>
-                {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -71,8 +71,8 @@ const EventStudyPage: React.FC = () => {
           Event Study · CAR Analysis
         </h1>
         <p className="page-description">
-          Analyze Cumulative Abnormal Returns (CAR) around funding rate events. 
-          Uses pre-computed <code>mv_event_car</code> materialized view for 10-15x faster queries.
+          Analyze cumulative abnormal returns (CAR) around funding rate events.
+          View min/max price movements within the event window.
         </p>
       </div>
 
@@ -106,7 +106,6 @@ const EventStudyPage: React.FC = () => {
       <div className="card mb-xl">
         <div className="card-header">
           <h3 className="card-title">Query Parameters</h3>
-          <span className="badge badge-success">⚡ Optimized</span>
         </div>
         <div className="form-grid">
           <div className="form-group">

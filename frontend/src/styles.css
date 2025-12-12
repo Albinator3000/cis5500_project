@@ -623,6 +623,10 @@ a:hover {
   color: var(--text-secondary);
 }
 
+.value-warning {
+  color: var(--accent-secondary);
+}
+
 /* Empty state */
 .empty-state {
   text-align: center;

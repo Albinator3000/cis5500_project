@@ -71,7 +71,6 @@ const VolatilityRegimesPage: React.FC = () => {
         </h1>
         <p className="page-description">
           Analyze how pre-event volatility conditions affect 60-minute markouts.
-          Uses <code>mv_event_volatility</code> + <code>mv_event_markouts</code> for 12-18x speedup.
         </p>
       </div>
 
@@ -105,7 +104,6 @@ const VolatilityRegimesPage: React.FC = () => {
       <div className="card mb-xl">
         <div className="card-header">
           <h3 className="card-title">Query Parameters</h3>
-          <span className="badge badge-success">⚡ Optimized</span>
         </div>
         <div className="form-grid">
           <div className="form-group">

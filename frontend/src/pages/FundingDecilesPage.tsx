@@ -66,7 +66,7 @@ const FundingDecilesPage: React.FC = () => {
         </h1>
         <p className="page-description">
           Analyze how funding rate deciles relate to subsequent 60-minute markouts.
-          Uses <code>mv_funding_deciles</code> + <code>mv_event_markouts</code> for 15-20x speedup.
+          Identify which funding rate levels lead to the best post-event performance.
         </p>
       </div>
 
@@ -96,7 +96,6 @@ const FundingDecilesPage: React.FC = () => {
       <div className="card mb-xl">
         <div className="card-header">
           <h3 className="card-title">Query Parameters</h3>
-          <span className="badge badge-success">⚡ Optimized</span>
         </div>
         <div className="form-grid">
           <div className="form-group">

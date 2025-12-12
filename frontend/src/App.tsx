@@ -8,6 +8,7 @@ import ExtremeRegimesPage from './pages/ExtremeRegimesPage';
 import HourlyAnalysisPage from './pages/HourlyAnalysisPage';
 import VolatilityRegimesPage from './pages/VolatilityRegimesPage';
 import SymbolDashboardPage from './pages/SymbolDashboardPage';
+import LeaderboardsPage from './pages/LeaderboardsPage';
 import QueryPerformancePage from './pages/QueryPerformancePage';
 import './styles.css';
 
@@ -53,6 +54,17 @@ const DatabaseIcon = () => (
     <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
     <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
     <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+  </svg>
+);
+
+const TrophyIcon = () => (
+  <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
+    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
+    <path d="M4 22h16"></path>
+    <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
+    <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
+    <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
   </svg>
 );
 
@@ -146,6 +158,10 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <NavLink to="/volatility" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             <ActivityIcon />
             <span>Vol Regimes</span>
+          </NavLink>
+          <NavLink to="/leaderboards" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            <TrophyIcon />
+            <span>Leaderboards</span>
           </NavLink>
           
           <div className="nav-section-label">Data</div>
@@ -245,6 +261,16 @@ const AppRoutes: React.FC = () => {
           <ProtectedRoute>
             <MainLayout>
               <SymbolDashboardPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/leaderboards"
+        element={
+          <ProtectedRoute>
+            <MainLayout>
+              <LeaderboardsPage />
             </MainLayout>
           </ProtectedRoute>
         }

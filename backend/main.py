@@ -425,6 +425,106 @@ def get_symbol_overview(
     return run_query(sql, (start_ts, end_ts))
 
 
+# -------------------------------------------------------------------
+# Query 8: Rank symbols by average |funding rate|
+# -------------------------------------------------------------------
+@app.get("/api/funding_pressure")
+def get_funding_pressure(
+    start_ts: datetime,
+    end_ts: datetime,
+    min_events: int = 10,
+    top_k: int = 10,
+) -> List[Dict[str, Any]]:
+    """
+    Rank symbols by average absolute funding rate.
+    """
+    sql = """
+        SELECT
+            symbol,
+            AVG(ABS(rate)) AS avg_abs_rate,
+            COUNT(*) AS n_events
+        FROM funding
+        WHERE ts BETWEEN %s AND %s
+        GROUP BY symbol
+        HAVING COUNT(*) >= %s
+        ORDER BY avg_abs_rate DESC
+        LIMIT %s;
+    """
+    return run_query(sql, (start_ts, end_ts, min_events, top_k))
+
+
+# -------------------------------------------------------------------
+# Query 9: Average 30-minute realized volatility after funding
+# -------------------------------------------------------------------
+@app.get("/api/post_event_volatility")
+def get_post_event_volatility(
+    start_ts: datetime,
+    end_ts: datetime,
+) -> List[Dict[str, Any]]:
+    """
+    Average 30-minute realized volatility after funding events by symbol.
+    """
+    sql = """
+        WITH event_rv AS (
+            SELECT
+                f.symbol,
+                f.ts,
+                STDDEV_SAMP(mr.r1m) AS rv_30m
+            FROM funding f
+            JOIN minute_returns mr
+              ON mr.symbol = f.symbol
+             AND mr.ts BETWEEN f.ts AND f.ts + INTERVAL '30 minutes'
+            WHERE f.ts BETWEEN %s AND %s
+            GROUP BY f.symbol, f.ts
+        )
+        SELECT
+            symbol,
+            AVG(rv_30m) AS avg_rv_30m,
+            COUNT(*) AS n_events
+        FROM event_rv
+        GROUP BY symbol
+        ORDER BY avg_rv_30m DESC;
+    """
+    return run_query(sql, (start_ts, end_ts))
+
+
+# -------------------------------------------------------------------
+# Query 10: Count events where 30-minute CAR exceeds threshold
+# -------------------------------------------------------------------
+@app.get("/api/positive_moves")
+def get_positive_moves(
+    start_ts: datetime,
+    end_ts: datetime,
+    threshold: float = 0.0,
+) -> List[Dict[str, Any]]:
+    """
+    Count events where 30-minute CAR exceeds threshold by symbol.
+    """
+    sql = """
+        WITH event_car AS (
+            SELECT
+                f.symbol,
+                f.ts,
+                SUM(mr.r1m) AS car_30m
+            FROM funding f
+            JOIN minute_returns mr
+              ON mr.symbol = f.symbol
+             AND mr.ts > f.ts
+             AND mr.ts <= f.ts + INTERVAL '30 minutes'
+            WHERE f.ts BETWEEN %s AND %s
+            GROUP BY f.symbol, f.ts
+        )
+        SELECT
+            symbol,
+            COUNT(*) AS n_positive_moves
+        FROM event_car
+        WHERE car_30m > %s
+        GROUP BY symbol
+        ORDER BY n_positive_moves DESC;
+    """
+    return run_query(sql, (start_ts, end_ts, threshold))
+
+
 # ===================================================================
 # SLOW QUERIES (For Performance Comparison)
 # Based on queries_milestone4.sql PART 1

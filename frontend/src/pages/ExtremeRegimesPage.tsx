@@ -58,41 +58,8 @@ const ExtremeRegimesPage: React.FC = () => {
           Extreme Regime Detection
         </h1>
         <p className="page-description">
-          Identify symbols with extreme funding regimes (high |rate| AND high OI).
-          Uses <code>mv_daily_rate_stats</code> + <code>mv_rolling_oi_stats</code> + <code>mv_event_markouts</code>.
+          Identify symbols experiencing extreme market conditions with high funding rates and elevated open interest.
         </p>
-      </div>
-
-      {/* Info Banner */}
-      <div className="card mb-xl" style={{ 
-        background: 'linear-gradient(135deg, var(--accent-secondary-dim), var(--accent-danger-dim))',
-        border: '1px solid var(--accent-secondary)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-lg)' }}>
-          <div style={{
-            width: 48,
-            height: 48,
-            background: 'var(--accent-secondary)',
-            borderRadius: 'var(--radius-md)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0
-          }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-            </svg>
-          </div>
-          <div>
-            <h3 style={{ marginBottom: 'var(--space-xs)', fontSize: '1rem' }}>
-              Dual-Signal Detection
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              This query finds events where <strong>both</strong> the funding rate exceeds the daily 90th percentile 
-              <strong> AND </strong> open interest exceeds the rolling 14-day 90th percentile.
-            </p>
-          </div>
-        </div>
       </div>
 
       {/* Stats Cards */}
@@ -127,7 +94,6 @@ const ExtremeRegimesPage: React.FC = () => {
       <div className="card mb-xl">
         <div className="card-header">
           <h3 className="card-title">Detection Parameters</h3>
-          <span className="badge badge-success">⚡ Optimized</span>
         </div>
         <div className="form-grid">
           <div className="form-group">

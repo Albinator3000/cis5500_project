@@ -132,8 +132,7 @@ const QueryPerformancePage: React.FC = () => {
           Query Performance Benchmark
         </h1>
         <p className="page-description">
-          Live comparison of SLOW (unoptimized) vs FAST (materialized view) queries.
-          Run benchmarks to see real execution times from your database.
+          Compare query execution times before and after optimization.
         </p>
       </div>
 
@@ -355,54 +354,6 @@ const QueryPerformancePage: React.FC = () => {
         ))}
       </div>
 
-      {/* Optimization Info */}
-      <div className="card" style={{ 
-        background: 'linear-gradient(135deg, var(--accent-primary-dim), var(--accent-success-dim))',
-        border: '1px solid var(--accent-primary)'
-      }}>
-        <div className="card-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
-          <h3 className="card-title">Optimization Strategies</h3>
-        </div>
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-          gap: 'var(--space-lg)',
-          marginTop: 'var(--space-md)'
-        }}>
-          <div style={{ padding: 'var(--space-md)', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-md)' }}>
-            <h4 style={{ color: 'var(--accent-primary)', fontSize: '0.9rem', marginBottom: 'var(--space-sm)' }}>
-              📊 Materialized Views
-            </h4>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Pre-compute expensive joins and aggregations once, reuse instantly.
-            </p>
-          </div>
-          <div style={{ padding: 'var(--space-md)', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-md)' }}>
-            <h4 style={{ color: 'var(--accent-primary)', fontSize: '0.9rem', marginBottom: 'var(--space-sm)' }}>
-              🎯 Early Filtering
-            </h4>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Apply date/symbol filters immediately on indexed columns.
-            </p>
-          </div>
-          <div style={{ padding: 'var(--space-md)', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-md)' }}>
-            <h4 style={{ color: 'var(--accent-primary)', fontSize: '0.9rem', marginBottom: 'var(--space-sm)' }}>
-              🔗 Strategic Indexes
-            </h4>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Composite indexes on (symbol, ts) for optimal temporal queries.
-            </p>
-          </div>
-          <div style={{ padding: 'var(--space-md)', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-md)' }}>
-            <h4 style={{ color: 'var(--accent-primary)', fontSize: '0.9rem', marginBottom: 'var(--space-sm)' }}>
-              ⚡ Window Functions
-            </h4>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Replace correlated subqueries with O(n log n) window operations.
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

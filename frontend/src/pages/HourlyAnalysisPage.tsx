@@ -61,7 +61,6 @@ const HourlyAnalysisPage: React.FC = () => {
         </h1>
         <p className="page-description">
           Discover optimal trading hours by analyzing 60-minute markouts by funding event hour.
-          Uses pre-computed <code>mv_event_markouts</code> for sub-second queries.
         </p>
       </div>
 
@@ -95,7 +94,6 @@ const HourlyAnalysisPage: React.FC = () => {
       <div className="card mb-xl">
         <div className="card-header">
           <h3 className="card-title">Query Parameters</h3>
-          <span className="badge badge-success">⚡ &lt;1s</span>
         </div>
         <div className="form-grid">
           <div className="form-group">
