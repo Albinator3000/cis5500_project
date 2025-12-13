@@ -1,9 +1,5 @@
 SET search_path TO public;
 
-------------------------------------------------------------
--- minute_returns: 1m log returns + 30m rolling RV
-------------------------------------------------------------
-
 DROP VIEW IF EXISTS minute_returns;
 
 CREATE OR REPLACE VIEW minute_returns AS
@@ -11,7 +7,6 @@ WITH returns AS (
     SELECT
         symbol,
         open_time AS ts,
-        -- 1-minute log return
         ln(close_price) - ln(
             lag(close_price) OVER (
                 PARTITION BY symbol
@@ -24,7 +19,6 @@ SELECT
     symbol,
     ts,
     r1m,
-    -- rolling 30-minute realized volatility of 1m log returns
     stddev_samp(r1m) OVER (
         PARTITION BY symbol
         ORDER BY ts

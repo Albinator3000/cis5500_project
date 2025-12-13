@@ -41,7 +41,6 @@ const ExtremeRegimesPage: React.FC = () => {
     return `${value >= 0 ? '+' : ''}${formatted}%`;
   };
 
-  // Calculate stats
   const avgMarkout = data.length > 0 
     ? data.reduce((sum, row) => sum + row.avg_markout_60m, 0) / data.length 
     : 0;

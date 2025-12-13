@@ -30,7 +30,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing token and validate it
     const initAuth = async () => {
       const token = authService.getToken();
       if (token) {
@@ -38,7 +37,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const userData = await authService.getCurrentUser(token);
           setUser(userData);
         } catch (error) {
-          // Token is invalid, remove it
           authService.removeToken();
         }
       }
@@ -74,7 +72,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
     authService.removeToken();
 
-    // Also logout from Google
     if (typeof window.google !== 'undefined' && window.google.accounts) {
       window.google.accounts.id.disableAutoSelect();
     }
@@ -101,7 +98,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   );
 };
 
-// Type declarations for global window object
 declare global {
   interface Window {
     google: any;

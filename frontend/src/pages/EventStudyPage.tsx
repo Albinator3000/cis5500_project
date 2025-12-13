@@ -50,7 +50,6 @@ const EventStudyPage: React.FC = () => {
     return `${value >= 0 ? '+' : ''}${formatted}%`;
   };
 
-  // Calculate stats
   const avgMinCar = data.length > 0 
     ? data.reduce((sum, row) => sum + row.min_car, 0) / data.length 
     : 0;

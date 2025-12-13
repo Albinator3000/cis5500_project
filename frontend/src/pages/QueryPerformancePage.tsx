@@ -31,11 +31,9 @@ const QueryPerformancePage: React.FC = () => {
       end_ts: `${endDate}T23:59:59Z`,
     };
 
-    // Update status to running-slow
     setResults(prev => prev.map((r, i) => i === index ? { ...r, status: 'running-slow' as const } : r));
 
     try {
-      // Run SLOW query
       let slowRes;
       switch (query.name) {
         case 'Event CAR':
@@ -58,10 +56,8 @@ const QueryPerformancePage: React.FC = () => {
       }
       const slowTime = slowRes.data.execution_time_ms;
 
-      // Update with slow time and status to running-fast
       setResults(prev => prev.map((r, i) => i === index ? { ...r, slowTime, status: 'running-fast' as const } : r));
 
-      // Run FAST query
       let fastRes;
       switch (query.name) {
         case 'Event CAR':
@@ -84,10 +80,8 @@ const QueryPerformancePage: React.FC = () => {
       }
       const fastTime = fastRes.data.execution_time_ms;
 
-      // Calculate improvement
       const improvement = ((slowTime - fastTime) / slowTime) * 100;
 
-      // Update with final results
       setResults(prev => prev.map((r, i) => i === index ? { 
         ...r, 
         fastTime, 
@@ -103,18 +97,15 @@ const QueryPerformancePage: React.FC = () => {
 
   const runAllBenchmarks = async () => {
     setIsRunning(true);
-    // Reset all results
     setResults(prev => prev.map(r => ({ ...r, slowTime: null, fastTime: null, improvement: null, status: 'idle' as const })));
 
     for (let i = 0; i < results.length; i++) {
       await runBenchmark(i);
-      // Small delay between queries
       await new Promise(resolve => setTimeout(resolve, 200));
     }
     setIsRunning(false);
   };
 
-  // Calculate summary stats
   const completedResults = results.filter(r => r.status === 'complete');
   const avgImprovement = completedResults.length > 0
     ? completedResults.reduce((sum, r) => sum + (r.improvement || 0), 0) / completedResults.length

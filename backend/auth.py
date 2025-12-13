@@ -9,12 +9,10 @@ from jose import JWTError, jwt
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# JWT Configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
-# OAuth Configuration
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
@@ -51,10 +49,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
 
 
 async def verify_google_token(token: str) -> Optional[Dict[str, Any]]:
-    """
-    Verify Google OAuth token by calling Google's tokeninfo endpoint.
-    Returns user info if valid, None otherwise.
-    """
+    """Verify Google OAuth token and return user info if valid."""
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -63,7 +58,6 @@ async def verify_google_token(token: str) -> Optional[Dict[str, Any]]:
 
             if response.status_code == 200:
                 data = response.json()
-                # Verify the token is for our app
                 if GOOGLE_CLIENT_ID and data.get("aud") != GOOGLE_CLIENT_ID:
                     return None
 
@@ -81,9 +75,7 @@ async def verify_google_token(token: str) -> Optional[Dict[str, Any]]:
 
 
 async def get_github_user(code: str, redirect_uri: str) -> Optional[Dict[str, Any]]:
-    """
-    Exchange GitHub authorization code for access token and get user info.
-    """
+    """Exchange GitHub authorization code for user info."""
     if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
         raise HTTPException(
             status_code=500,
@@ -92,7 +84,6 @@ async def get_github_user(code: str, redirect_uri: str) -> Optional[Dict[str, An
 
     try:
         async with httpx.AsyncClient() as client:
-            # Exchange code for access token
             token_response = await client.post(
                 "https://github.com/login/oauth/access_token",
                 headers={"Accept": "application/json"},
@@ -113,7 +104,6 @@ async def get_github_user(code: str, redirect_uri: str) -> Optional[Dict[str, An
             if not access_token:
                 return None
 
-            # Get user info
             user_response = await client.get(
                 "https://api.github.com/user",
                 headers={
@@ -127,7 +117,6 @@ async def get_github_user(code: str, redirect_uri: str) -> Optional[Dict[str, An
 
             user_data = user_response.json()
 
-            # Get primary email if not public
             email = user_data.get("email")
             if not email:
                 email_response = await client.get(

@@ -55,7 +55,6 @@ const VolatilityRegimesPage: React.FC = () => {
     }
   };
 
-  // Calculate stats
   const totalEvents = data.reduce((sum, row) => sum + row.n_events, 0);
   const bestRegime = data.length > 0 ? data.reduce((best, row) => row.avg_markout_60m > best.avg_markout_60m ? row : best) : null;
   const maxAbs = data.length > 0 ? Math.max(...data.map(d => Math.abs(d.avg_markout_60m))) : 0;

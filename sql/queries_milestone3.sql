@@ -1,16 +1,4 @@
-------------------------------------------------------------
--- Milestone 3 Queries
--- Assumes:
---   symbols, klines, funding, open_interest tables
---   minute_returns view (symbol, ts, r1m, rv_30m)
--- Data range: 2024-01-01 to 2024-01-31 UTC
-------------------------------------------------------------
-
-------------------------------------------------------------
--- Query 1 (Complex):
--- Cumulative return around each funding event in [-60, +180] minutes,
--- with CAR starting at event_ts (pre-event returns don't accumulate).
-------------------------------------------------------------
+-- Query 1: CAR around funding events
 WITH funding_events AS (
     SELECT
         symbol,
@@ -56,10 +44,7 @@ FROM car_series
 GROUP BY symbol, event_ts
 ORDER BY event_ts;
 
-------------------------------------------------------------
--- Query 2 (Complex):
--- Funding rate deciles by day vs 60-minute post-event return
-------------------------------------------------------------
+-- Query 2: Funding rate deciles vs 60-minute drift
 WITH funding_with_decile AS (
     SELECT
         symbol,
@@ -93,11 +78,7 @@ FROM event_markouts
 GROUP BY rate_decile
 ORDER BY rate_decile;
 
-------------------------------------------------------------
--- Query 3 (Complex) – FIXED:
--- Extreme regime: |funding| > daily p90 AND OI > rolling 14d p90
--- ranked by 60m drift
-------------------------------------------------------------
+-- Query 3: Extreme regime detection
 WITH daily_rate_stats AS (
     SELECT
         symbol,
@@ -155,12 +136,9 @@ FROM event_markouts
 GROUP BY symbol
 HAVING COUNT(*) >= 5          -- minimum number of regime events
 ORDER BY avg_markout_60m DESC
-LIMIT 10;                     -- top-K symbols
+LIMIT 10;
 
-------------------------------------------------------------
--- Query 4 (Complex):
--- Symbols that never have negative 30m CAR in low-vol regimes
-------------------------------------------------------------
+-- Query 4: Low-volatility safe symbols
 WITH funding_rv AS (
     SELECT
         f.symbol,
@@ -193,10 +171,7 @@ WHERE NOT EXISTS (
 )
 ORDER BY fr.symbol;
 
-------------------------------------------------------------
--- Query 5:
--- Average 60-minute markout by hour-of-day for funding events
-------------------------------------------------------------
+-- Query 5: Hour-of-day markout analysis
 WITH event_markouts AS (
     SELECT
         f.symbol,
@@ -218,10 +193,7 @@ FROM event_markouts
 GROUP BY funding_hour
 ORDER BY funding_hour;
 
-------------------------------------------------------------
--- Query 6:
--- Markouts conditioned on short-term volatility regime
-------------------------------------------------------------
+-- Query 6: Volatility regime conditioning
 WITH event_vol AS (
     SELECT
         f.symbol,
@@ -266,10 +238,7 @@ FROM event_markouts
 GROUP BY vol_regime
 ORDER BY vol_regime;
 
-------------------------------------------------------------
--- Query 7:
--- Overview of symbols: counts and basic liquidity stats
-------------------------------------------------------------
+-- Query 7: Symbol overview and liquidity stats
 SELECT
     s.symbol,
     COUNT(DISTINCT k.open_time) AS n_klines,
@@ -284,10 +253,7 @@ WHERE k.open_time BETWEEN '2024-01-01 00:00:00' AND '2024-01-31 23:59:59'
 GROUP BY s.symbol
 ORDER BY s.symbol;
 
-------------------------------------------------------------
--- Query 8:
--- Rank symbols by average |funding rate|
-------------------------------------------------------------
+-- Query 8: Rank symbols by funding pressure
 SELECT
     symbol,
     AVG(ABS(rate)) AS avg_abs_rate,
@@ -297,12 +263,9 @@ WHERE ts BETWEEN '2024-01-01 00:00:00' AND '2024-01-31 23:59:59'
 GROUP BY symbol
 HAVING COUNT(*) >= 10           -- minimum # of funding prints
 ORDER BY avg_abs_rate DESC
-LIMIT 10;                       -- top-K
+LIMIT 10;
 
-------------------------------------------------------------
--- Query 9:
--- Average 30-minute realized volatility after funding
-------------------------------------------------------------
+-- Query 9: Average post-event volatility by symbol
 WITH event_rv AS (
     SELECT
         f.symbol,
@@ -323,10 +286,7 @@ FROM event_rv
 GROUP BY symbol
 ORDER BY avg_rv_30m DESC;
 
-------------------------------------------------------------
--- Query 10:
--- Count events where 30-minute CAR exceeds a threshold
-------------------------------------------------------------
+-- Query 10: Positive price moves by symbol
 WITH event_car AS (
     SELECT
         f.symbol,

@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import time
 
-# Import auth utilities
 from auth import (
     create_access_token,
     verify_token,
@@ -18,9 +17,6 @@ from auth import (
     get_github_user
 )
 
-# -------------------------------------------------------------------
-# DB CONFIG
-# -------------------------------------------------------------------
 DB_HOST = os.getenv("DB_HOST", "cis550-project-db.c1am6gascgf2.us-east-1.rds.amazonaws.com")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "cis550_project")
@@ -72,17 +68,14 @@ def run_query_timed(sql: str, params: tuple) -> tuple[List[Dict[str, Any]], floa
 
 app = FastAPI(title="Funding-Aware Market Maker API")
 
-# Get allowed origins from environment or use defaults
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
-# Add production frontend URL if provided
 if FRONTEND_URL and FRONTEND_URL not in allowed_origins:
     allowed_origins.append(FRONTEND_URL)
-    # Also add without trailing slash if present
     if FRONTEND_URL.endswith("/"):
         allowed_origins.append(FRONTEND_URL.rstrip("/"))
     else:
@@ -99,13 +92,9 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> Dict[str, str]:
-    """Simple health check endpoint."""
     return {"status": "ok"}
 
 
-# -------------------------------------------------------------------
-# Authentication Models
-# -------------------------------------------------------------------
 class GoogleAuthRequest(BaseModel):
     token: str
 
@@ -121,15 +110,9 @@ class AuthResponse(BaseModel):
     user: Dict[str, Any]
 
 
-# -------------------------------------------------------------------
-# Authentication Endpoints
-# -------------------------------------------------------------------
 @app.post("/api/auth/google", response_model=AuthResponse)
 async def auth_google(request: GoogleAuthRequest):
-    """
-    Authenticate with Google OAuth.
-    Expects a Google ID token from the frontend.
-    """
+    """Authenticate with Google OAuth using ID token."""
     user_info = await verify_google_token(request.token)
 
     if not user_info:
@@ -138,7 +121,6 @@ async def auth_google(request: GoogleAuthRequest):
             detail="Invalid Google token"
         )
 
-    # Create JWT token for our application
     access_token = create_access_token(data={"sub": user_info["email"], **user_info})
 
     return {
@@ -150,10 +132,7 @@ async def auth_google(request: GoogleAuthRequest):
 
 @app.post("/api/auth/github", response_model=AuthResponse)
 async def auth_github(request: GitHubAuthRequest):
-    """
-    Authenticate with GitHub OAuth.
-    Expects an authorization code and redirect URI from the frontend.
-    """
+    """Authenticate with GitHub OAuth using authorization code."""
     user_info = await get_github_user(request.code, request.redirect_uri)
 
     if not user_info:
@@ -162,7 +141,6 @@ async def auth_github(request: GitHubAuthRequest):
             detail="Failed to authenticate with GitHub"
         )
 
-    # Create JWT token for our application
     access_token = create_access_token(data={"sub": user_info["email"], **user_info})
 
     return {
@@ -174,16 +152,10 @@ async def auth_github(request: GitHubAuthRequest):
 
 @app.get("/api/auth/me")
 async def get_current_user(user_data: Dict = Depends(verify_token)):
-    """
-    Get current user information from JWT token.
-    Requires Authorization: Bearer <token> header.
-    """
+    """Get current user information from JWT token."""
     return {"user": user_data}
 
 
-# -------------------------------------------------------------------
-# Helper: list symbols (for dropdowns etc.)
-# -------------------------------------------------------------------
 @app.get("/api/symbols")
 def list_symbols() -> List[Dict[str, Any]]:
     sql = """
@@ -194,26 +166,13 @@ def list_symbols() -> List[Dict[str, Any]]:
     return run_query(sql, ())
 
 
-# ===================================================================
-# OPTIMIZED QUERIES (Using Materialized Views)
-# Based on queries_milestone4.sql PART 3
-# ===================================================================
-
-# -------------------------------------------------------------------
-# FAST Query 1: CAR Around Funding Events (OPTIMIZED)
-# Uses pre-computed mv_event_car
-# -------------------------------------------------------------------
 @app.get("/api/event_car")
 def get_event_car(
     symbol: str,
     start_ts: datetime,
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
-    """
-    For each funding event of `symbol` in [start_ts, end_ts],
-    return the min/max cumulative return in [-60, +180] minutes.
-    Uses pre-computed mv_event_car materialized view.
-    """
+    """Return min/max CAR for each funding event using pre-computed view."""
     sql = """
         SELECT
             symbol,
@@ -229,19 +188,12 @@ def get_event_car(
     return run_query(sql, (symbol, start_ts, end_ts))
 
 
-# -------------------------------------------------------------------
-# FAST Query 2: Funding Rate Deciles vs 60m Drift (OPTIMIZED)
-# Uses pre-computed mv_funding_deciles and mv_event_markouts
-# -------------------------------------------------------------------
 @app.get("/api/funding_deciles")
 def get_funding_deciles(
     start_ts: datetime,
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
-    """
-    Analyze how funding rate deciles relate to 60-minute markouts.
-    Uses pre-computed materialized views for fast execution.
-    """
+    """Analyze funding rate deciles vs 60-minute markouts."""
     sql = """
         SELECT
             fd.rate_decile,
@@ -258,10 +210,6 @@ def get_funding_deciles(
     return run_query(sql, (start_ts, end_ts))
 
 
-# -------------------------------------------------------------------
-# FAST Query 3: Extreme Regime Detection (OPTIMIZED)
-# Uses pre-computed mv_daily_rate_stats, mv_rolling_oi_stats, mv_event_markouts
-# -------------------------------------------------------------------
 @app.get("/api/extreme_regimes")
 def get_extreme_regimes(
     start_ts: datetime,
@@ -269,10 +217,7 @@ def get_extreme_regimes(
     min_events: int = 5,
     top_k: int = 10,
 ) -> List[Dict[str, Any]]:
-    """
-    Identify symbols with extreme funding regimes (high |rate| AND high OI).
-    Uses pre-computed materialized views for regime detection.
-    """
+    """Identify symbols with extreme funding regimes."""
     sql = """
         WITH regime_events AS (
             SELECT
@@ -305,19 +250,12 @@ def get_extreme_regimes(
     return run_query(sql, (start_ts, end_ts, min_events, top_k))
 
 
-# -------------------------------------------------------------------
-# FAST Query 4: Symbols with No Negative CAR in Low-Vol (OPTIMIZED)
-# Uses pre-computed mv_event_volatility
-# -------------------------------------------------------------------
 @app.get("/api/low_vol_safe_symbols")
 def get_low_vol_safe_symbols(
     start_ts: datetime,
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
-    """
-    Find symbols that never have negative 30m CAR during low volatility regimes.
-    Uses pre-computed mv_event_volatility materialized view.
-    """
+    """Find symbols with no negative CAR during low volatility."""
     sql = """
         WITH median_rv AS (
             SELECT
@@ -343,19 +281,12 @@ def get_low_vol_safe_symbols(
     return run_query(sql, (start_ts, end_ts, start_ts, end_ts))
 
 
-# -------------------------------------------------------------------
-# FAST Query 5: Hour-of-Day Markout Analysis (OPTIMIZED)
-# Uses pre-computed mv_event_markouts
-# -------------------------------------------------------------------
 @app.get("/api/hourly_markouts")
 def get_hourly_markouts(
     start_ts: datetime,
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
-    """
-    Analyze average 60-minute markouts by hour of day.
-    Uses pre-computed mv_event_markouts materialized view.
-    """
+    """Analyze average 60-minute markouts by hour of day."""
     sql = """
         SELECT
             EXTRACT(HOUR FROM event_ts) AS funding_hour,
@@ -369,19 +300,12 @@ def get_hourly_markouts(
     return run_query(sql, (start_ts, end_ts))
 
 
-# -------------------------------------------------------------------
-# FAST Query 6: Volatility Regime Conditioning (OPTIMIZED)
-# Uses pre-computed mv_event_volatility and mv_event_markouts
-# -------------------------------------------------------------------
 @app.get("/api/vol_regime_markouts")
 def get_vol_regime_markouts(
     start_ts: datetime,
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
-    """
-    Analyze markouts by pre-event volatility regime (low/medium/high).
-    Uses pre-computed materialized views for fast execution.
-    """
+    """Analyze markouts by volatility regime."""
     sql = """
         SELECT
             ev.vol_regime,
@@ -398,19 +322,12 @@ def get_vol_regime_markouts(
     return run_query(sql, (start_ts, end_ts))
 
 
-# -------------------------------------------------------------------
-# FAST Query 7: Symbol Overview and Liquidity Stats (OPTIMIZED)
-# Uses pre-computed mv_symbol_daily_stats
-# -------------------------------------------------------------------
 @app.get("/api/symbol_overview")
 def get_symbol_overview(
     start_ts: datetime,
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
-    """
-    Get aggregated statistics for all symbols.
-    Uses pre-computed mv_symbol_daily_stats materialized view.
-    """
+    """Get aggregated statistics for all symbols."""
     sql = """
         SELECT
             symbol,
@@ -425,9 +342,6 @@ def get_symbol_overview(
     return run_query(sql, (start_ts, end_ts))
 
 
-# -------------------------------------------------------------------
-# Query 8: Rank symbols by average |funding rate|
-# -------------------------------------------------------------------
 @app.get("/api/funding_pressure")
 def get_funding_pressure(
     start_ts: datetime,
@@ -435,9 +349,7 @@ def get_funding_pressure(
     min_events: int = 10,
     top_k: int = 10,
 ) -> List[Dict[str, Any]]:
-    """
-    Rank symbols by average absolute funding rate.
-    """
+    """Rank symbols by average absolute funding rate."""
     sql = """
         SELECT
             symbol,
@@ -453,18 +365,12 @@ def get_funding_pressure(
     return run_query(sql, (start_ts, end_ts, min_events, top_k))
 
 
-# -------------------------------------------------------------------
-# Query 9: Average pre-event volatility by symbol
-# Uses mv_event_volatility for fast execution
-# -------------------------------------------------------------------
 @app.get("/api/post_event_volatility")
 def get_post_event_volatility(
     start_ts: datetime,
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
-    """
-    Average pre-event volatility by symbol using materialized view.
-    """
+    """Average pre-event volatility by symbol."""
     sql = """
         SELECT
             symbol,
@@ -478,20 +384,13 @@ def get_post_event_volatility(
     return run_query(sql, (start_ts, end_ts))
 
 
-# -------------------------------------------------------------------
-# Query 10: Count events where 60-minute markout exceeds threshold
-# Uses mv_event_markouts for fast execution
-# -------------------------------------------------------------------
 @app.get("/api/positive_moves")
 def get_positive_moves(
     start_ts: datetime,
     end_ts: datetime,
     threshold: float = 0.0,
 ) -> List[Dict[str, Any]]:
-    """
-    Count events where 60-minute markout exceeds threshold by symbol.
-    Uses pre-computed mv_event_markouts materialized view.
-    """
+    """Count events where 60-minute markout exceeds threshold."""
     sql = """
         SELECT
             symbol,
@@ -505,24 +404,13 @@ def get_positive_moves(
     return run_query(sql, (start_ts, end_ts, threshold))
 
 
-# ===================================================================
-# SLOW QUERIES (For Performance Comparison)
-# Based on queries_milestone4.sql PART 1
-# ===================================================================
-
-# -------------------------------------------------------------------
-# SLOW Query 1: CAR Around Funding Events
-# -------------------------------------------------------------------
 @app.get("/api/slow/event_car")
 def get_event_car_slow(
     symbol: str,
     start_ts: datetime,
     end_ts: datetime,
 ) -> Dict[str, Any]:
-    """
-    Slow version of event CAR query for performance comparison.
-    Returns results with execution time.
-    """
+    """Unoptimized event CAR query for performance comparison."""
     sql = """
         WITH all_funding AS (
             SELECT
@@ -573,17 +461,12 @@ def get_event_car_slow(
     return {"results": results, "execution_time_ms": elapsed_ms}
 
 
-# -------------------------------------------------------------------
-# SLOW Query 2: Funding Rate Deciles vs 60m Drift
-# -------------------------------------------------------------------
 @app.get("/api/slow/funding_deciles")
 def get_funding_deciles_slow(
     start_ts: datetime,
     end_ts: datetime,
 ) -> Dict[str, Any]:
-    """
-    Slow version of funding deciles query for performance comparison.
-    """
+    """Unoptimized funding deciles query for performance comparison."""
     sql = """
         WITH all_funding_with_decile AS (
             SELECT
@@ -622,17 +505,12 @@ def get_funding_deciles_slow(
     return {"results": results, "execution_time_ms": elapsed_ms}
 
 
-# -------------------------------------------------------------------
-# SLOW Query 5: Hour-of-Day Markout Analysis
-# -------------------------------------------------------------------
 @app.get("/api/slow/hourly_markouts")
 def get_hourly_markouts_slow(
     start_ts: datetime,
     end_ts: datetime,
 ) -> Dict[str, Any]:
-    """
-    Slow version of hourly markouts query for performance comparison.
-    """
+    """Unoptimized hourly markouts query for performance comparison."""
     sql = """
         WITH all_event_markouts AS (
             SELECT
@@ -659,17 +537,12 @@ def get_hourly_markouts_slow(
     return {"results": results, "execution_time_ms": elapsed_ms}
 
 
-# -------------------------------------------------------------------
-# SLOW Query 6: Volatility Regime Conditioning
-# -------------------------------------------------------------------
 @app.get("/api/slow/vol_regime_markouts")
 def get_vol_regime_markouts_slow(
     start_ts: datetime,
     end_ts: datetime,
 ) -> Dict[str, Any]:
-    """
-    Slow version of volatility regime query for performance comparison.
-    """
+    """Unoptimized volatility regime query for performance comparison."""
     sql = """
         WITH all_event_vol AS (
             SELECT
@@ -719,17 +592,12 @@ def get_vol_regime_markouts_slow(
     return {"results": results, "execution_time_ms": elapsed_ms}
 
 
-# -------------------------------------------------------------------
-# SLOW Query 7: Symbol Overview
-# -------------------------------------------------------------------
 @app.get("/api/slow/symbol_overview")
 def get_symbol_overview_slow(
     start_ts: datetime,
     end_ts: datetime,
 ) -> Dict[str, Any]:
-    """
-    Slow version of symbol overview query for performance comparison.
-    """
+    """Unoptimized symbol overview query for performance comparison."""
     sql = """
         WITH all_klines AS (
             SELECT
@@ -762,9 +630,6 @@ def get_symbol_overview_slow(
     return {"results": results, "execution_time_ms": elapsed_ms}
 
 
-# -------------------------------------------------------------------
-# FAST Query Timed Versions (For Performance Comparison Dashboard)
-# -------------------------------------------------------------------
 @app.get("/api/fast/event_car")
 def get_event_car_fast_timed(
     symbol: str,

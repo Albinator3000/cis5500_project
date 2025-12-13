@@ -1,17 +1,11 @@
 SET search_path TO public;
 
-------------------------------------------------------------
--- 1. symbols
-------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS symbols (
     symbol      TEXT PRIMARY KEY,
     base_asset  TEXT,
     quote_asset TEXT
 );
 
-------------------------------------------------------------
--- 2. klines (1-minute candles)
-------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS klines (
     symbol           TEXT NOT NULL REFERENCES symbols(symbol),
     open_time        TIMESTAMP NOT NULL,
@@ -27,9 +21,6 @@ CREATE TABLE IF NOT EXISTS klines (
 CREATE INDEX IF NOT EXISTS idx_klines_sym_time
     ON klines(symbol, open_time);
 
-------------------------------------------------------------
--- 3. funding
-------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS funding (
     symbol TEXT NOT NULL REFERENCES symbols(symbol),
     ts     TIMESTAMP NOT NULL,
@@ -40,9 +31,6 @@ CREATE TABLE IF NOT EXISTS funding (
 CREATE INDEX IF NOT EXISTS idx_funding_sym_ts
     ON funding(symbol, ts);
 
-------------------------------------------------------------
--- 4. open_interest
-------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS open_interest (
     symbol TEXT NOT NULL REFERENCES symbols(symbol),
     ts     TIMESTAMP NOT NULL,
@@ -53,9 +41,6 @@ CREATE TABLE IF NOT EXISTS open_interest (
 CREATE INDEX IF NOT EXISTS idx_oi_sym_ts
     ON open_interest(symbol, ts);
 
-------------------------------------------------------------
--- 5. premium_index
-------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS premium_index (
     symbol    TEXT NOT NULL REFERENCES symbols(symbol),
     ts        TIMESTAMP NOT NULL,
@@ -68,10 +53,6 @@ CREATE TABLE IF NOT EXISTS premium_index (
 
 CREATE INDEX IF NOT EXISTS idx_premium_sym_ts
     ON premium_index(symbol, ts);
-
-------------------------------------------------------------
--- 6. events
-------------------------------------------------------------
 
 DO $$
 BEGIN

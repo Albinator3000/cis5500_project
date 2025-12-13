@@ -37,13 +37,11 @@ const FundingDecilesPage: React.FC = () => {
     return `${value >= 0 ? '+' : ''}${formatted}%`;
   };
 
-  // Calculate stats
   const totalEvents = data.reduce((sum, row) => sum + row.n_events, 0);
   const maxMarkout = data.length > 0 ? Math.max(...data.map(d => d.avg_markout_60m)) : 0;
   const minMarkout = data.length > 0 ? Math.min(...data.map(d => d.avg_markout_60m)) : 0;
   const spread = maxMarkout - minMarkout;
 
-  // Get decile label
   const getDecileLabel = (decile: number) => {
     if (decile <= 2) return 'Very Low';
     if (decile <= 4) return 'Low';

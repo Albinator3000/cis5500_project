@@ -43,7 +43,6 @@ const HourlyAnalysisPage: React.FC = () => {
     return `${h}:00 ${ampm}`;
   };
 
-  // Calculate stats
   const totalEvents = data.reduce((sum, row) => sum + row.n_events, 0);
   const bestHour = data.length > 0 ? data.reduce((best, row) => row.avg_markout_60m > best.avg_markout_60m ? row : best) : null;
   const worstHour = data.length > 0 ? data.reduce((worst, row) => row.avg_markout_60m < worst.avg_markout_60m ? row : worst) : null;

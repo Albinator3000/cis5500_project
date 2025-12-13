@@ -13,7 +13,6 @@ const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Handle GitHub OAuth callback
   useEffect(() => {
     const code = searchParams.get('code');
     if (code) {
@@ -26,7 +25,6 @@ const LoginPage: React.FC = () => {
     setError(null);
     try {
       await loginWithGitHub(code, GITHUB_REDIRECT_URI);
-      // Clear the code from URL
       navigate('/login', { replace: true });
     } catch (err) {
       setError('GitHub sign-in failed. Please try again.');
@@ -36,7 +34,6 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  // Handle Google login success
   const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
     setError(null);
     setAuthLoading(true);
@@ -52,12 +49,10 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  // Handle Google login error
   const handleGoogleError = () => {
     setError('Google sign-in failed. Please try again.');
   };
 
-  // Handle GitHub login
   const handleGitHubLogin = () => {
     if (!GITHUB_CLIENT_ID) {
       setError('GitHub OAuth is not configured.');
@@ -68,7 +63,6 @@ const LoginPage: React.FC = () => {
     window.location.href = githubAuthUrl;
   };
 
-  // Redirect if already authenticated
   if (isAuthenticated && !isLoading) {
     return <Navigate to="/" replace />;
   }

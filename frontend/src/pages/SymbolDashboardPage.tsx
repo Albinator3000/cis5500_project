@@ -41,7 +41,6 @@ const SymbolDashboardPage: React.FC = () => {
     return value.toFixed(2);
   };
 
-  // Calculate stats
   const totalKlines = data.reduce((sum, row) => sum + row.n_klines, 0);
   const totalFunding = data.reduce((sum, row) => sum + row.n_funding_events, 0);
   const avgVolume = data.length > 0 
