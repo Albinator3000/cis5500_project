@@ -13,6 +13,7 @@ const LoginPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
+  // Handle GitHub OAuth callback (when redirected back with auth code)
   useEffect(() => {
     const code = searchParams.get('code');
     if (code) {
@@ -59,6 +60,7 @@ const LoginPage: React.FC = () => {
       return;
     }
 
+    // Redirect to GitHub OAuth authorization page
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(GITHUB_REDIRECT_URI)}&scope=read:user user:email`;
     window.location.href = githubAuthUrl;
   };

@@ -17,10 +17,8 @@ export interface AuthResponse {
   user: User;
 }
 
+// Authentication service for OAuth and token management
 export const authService = {
-  /**
-   * Authenticate with Google OAuth
-   */
   async loginWithGoogle(googleToken: string): Promise<AuthResponse> {
     const response = await axios.post<AuthResponse>(`${API_BASE_URL}/api/auth/google`, {
       token: googleToken,
@@ -28,9 +26,6 @@ export const authService = {
     return response.data;
   },
 
-  /**
-   * Authenticate with GitHub OAuth
-   */
   async loginWithGitHub(code: string, redirectUri: string): Promise<AuthResponse> {
     const response = await axios.post<AuthResponse>(`${API_BASE_URL}/api/auth/github`, {
       code,
@@ -39,9 +34,6 @@ export const authService = {
     return response.data;
   },
 
-  /**
-   * Get current user from token
-   */
   async getCurrentUser(token: string): Promise<User> {
     const response = await axios.get<{ user: User }>(`${API_BASE_URL}/api/auth/me`, {
       headers: {
@@ -51,23 +43,14 @@ export const authService = {
     return response.data.user;
   },
 
-  /**
-   * Store auth token in localStorage
-   */
   setToken(token: string): void {
     localStorage.setItem('auth_token', token);
   },
 
-  /**
-   * Get auth token from localStorage
-   */
   getToken(): string | null {
     return localStorage.getItem('auth_token');
   },
 
-  /**
-   * Remove auth token from localStorage
-   */
   removeToken(): void {
     localStorage.removeItem('auth_token');
   },

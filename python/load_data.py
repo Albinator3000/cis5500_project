@@ -5,6 +5,7 @@ from dateutil import parser as dateparser
 
 import psycopg2
 
+# Database connection configuration
 DB_HOST = "cis550-project-db.c1am6gascgf2.us-east-1.rds.amazonaws.com"
 DB_PORT = 5432
 DB_NAME = "cis550_project"
@@ -14,7 +15,7 @@ SYN_DIR = os.path.join("data", "synthetic")
 
 
 def _safe_parse_ts(raw_ts, context):
-    """Parse timestamp, returning None on failure."""
+    """Parse timestamp, returning None on failure to allow graceful skipping."""
     try:
         if isinstance(raw_ts, datetime):
             return raw_ts
@@ -62,6 +63,7 @@ def init_symbols(symbols):
         if not sym:
             continue
         sym = sym.upper().strip()
+        # Extract base and quote from symbol (e.g., BTCUSDT -> BTC, USDT)
         base = sym[:-4]
         quote = sym[-4:]
         cur.execute(
@@ -93,7 +95,7 @@ def load_klines_from_folder(folder_path, symbols):
     symbol_set = {s.upper().strip() for s in symbols}
 
     files = all_files
-    BATCH_SIZE = 5000
+    BATCH_SIZE = 5000  # Insert in batches for performance
 
     total_good = 0
     total_bad = 0
@@ -101,6 +103,7 @@ def load_klines_from_folder(folder_path, symbols):
     for fname in files:
         path = os.path.join(folder_path, fname)
 
+        # Extract symbol from filename (e.g., BTCUSDT-1m-2024-01.zip)
         symbol = fname.split("-")[0].upper().strip()
         if symbol not in symbol_set:
             print(f"[KLINES] Skipping {fname} (symbol {symbol} not in our list)")

@@ -45,11 +45,13 @@ const EventStudyPage: React.FC = () => {
     });
   };
 
+  // Format decimal returns as percentage with sign
   const formatValue = (value: number) => {
     const formatted = (value * 100).toFixed(3);
     return `${value >= 0 ? '+' : ''}${formatted}%`;
   };
 
+  // Calculate summary statistics across all events
   const avgMinCar = data.length > 0 
     ? data.reduce((sum, row) => sum + row.min_car, 0) / data.length 
     : 0;

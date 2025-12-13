@@ -1,42 +1,21 @@
-------------------------------------------------------------
--- CIS 5500 Milestone 4: Query Optimization Assignment
--- Database Query Optimization Using Materialized Views
---
--- This file demonstrates query optimization techniques to achieve
--- dramatic performance improvements (15+ seconds → <5 seconds)
---
--- Strategy: Take the 7 complex queries from Milestone 3 and create
--- inefficient vs optimized versions using materialized views
---
--- Author: Albert Opher, Ishaan Shah, Gaurav Malhotra, Madhav Sharma
--- Date: Fall 2025
-------------------------------------------------------------
+-- PART 1: INEFFICIENT BASELINE QUERIES
+-- These demonstrate common performance anti-patterns:
+-- - Loading full tables before filtering
+-- - Late application of WHERE clauses  
+-- - Repeated expensive computations
+-- - Correlated subqueries instead of joins
 
-------------------------------------------------------------
--- PART 1: INEFFICIENT BASELINE QUERIES (Pre-Optimization)
---
--- These queries implement the same logic as Milestone 3 but with
--- inefficiency patterns: unfiltered CTEs, late filtering, no caching
-------------------------------------------------------------
-
-------------------------------------------------------------
--- SLOW Query 1: CAR Around Funding Events
--- Based on Milestone 3 Query 1
--- Inefficiency patterns:
--- 1. CTE loads ALL funding events (not filtered by date/symbol)
--- 2. Joins to minute_returns before filtering
--- 3. Window function computed on large unfiltered dataset
--- Expected runtime: 18-25 seconds
-------------------------------------------------------------
+-- SLOW Query 1: CAR Around Funding Events (unoptimized)
+-- Demonstrates: Loading ALL funding events before filtering by date/symbol
 WITH all_funding AS (
-    -- Inefficiency: Load ALL funding events without filtering
+    -- Anti-pattern: No filter, loads entire funding table
     SELECT
         symbol,
         ts AS event_ts
     FROM funding
 ),
 all_returns_window AS (
-    -- Inefficiency: Generate windows for ALL events
+    -- Anti-pattern: Joins to minute_returns for ALL events
     SELECT
         f.symbol,
         f.event_ts,
@@ -64,7 +43,6 @@ car_series AS (
         ) AS car
     FROM all_returns_window
 )
--- Inefficiency: Filter applied only at the end
 SELECT
     symbol,
     event_ts,
@@ -76,18 +54,8 @@ WHERE symbol = 'BTCUSDT'
 GROUP BY symbol, event_ts
 ORDER BY event_ts;
 
-
-------------------------------------------------------------
--- SLOW Query 2: Funding Rate Deciles vs 60m Drift
--- Based on Milestone 3 Query 2
--- Inefficiency patterns:
--- 1. Compute deciles on ALL funding data before filtering
--- 2. Join to minute_returns for ALL events
--- 3. No pre-computed markouts
--- Expected runtime: 20-28 seconds
-------------------------------------------------------------
+-- SLOW Query 2: Funding Rate Deciles vs 60m Drift (unoptimized)
 WITH all_funding_with_decile AS (
-    -- Inefficiency: Compute deciles on full dataset
     SELECT
         symbol,
         ts,
@@ -112,7 +80,6 @@ all_event_markouts AS (
      AND mr.ts <= f.ts + INTERVAL '60 minutes'
     GROUP BY f.symbol, f.ts, f.rate_decile
 )
--- Inefficiency: Date filter applied at the end
 SELECT
     rate_decile,
     AVG(markout_60m) AS avg_markout_60m,
@@ -122,18 +89,8 @@ WHERE ts BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY rate_decile
 ORDER BY rate_decile;
 
-
-------------------------------------------------------------
--- SLOW Query 3: Extreme Regime Detection
--- Based on Milestone 3 Query 3
--- Inefficiency patterns:
--- 1. Correlated subquery for rolling OI percentile (O(n²))
--- 2. Compute stats on full dataset before filtering
--- 3. Multiple table scans
--- Expected runtime: 25-35 seconds
-------------------------------------------------------------
+-- SLOW Query 3: Extreme Regime Detection (unoptimized)
 WITH daily_rate_stats AS (
-    -- Load all data first
     SELECT
         symbol,
         DATE(ts) AS d,
@@ -142,7 +99,6 @@ WITH daily_rate_stats AS (
     GROUP BY symbol, DATE(ts)
 ),
 rolling_oi_stats AS (
-    -- Inefficiency: Correlated subquery for each row
     SELECT
         oi1.symbol,
         oi1.ts,
@@ -170,7 +126,6 @@ regime_events AS (
       AND oi.oi > oi.p90_oi_14d
 ),
 event_markouts AS (
-    -- Inefficiency: Another join to minute_returns
     SELECT
         r.symbol,
         r.ts,
@@ -182,7 +137,6 @@ event_markouts AS (
      AND mr.ts <= r.ts + INTERVAL '60 minutes'
     GROUP BY r.symbol, r.ts
 )
--- Inefficiency: Filter at the end
 SELECT
     symbol,
     AVG(markout_60m) AS avg_markout_60m,
@@ -194,16 +148,7 @@ HAVING COUNT(*) >= 5
 ORDER BY avg_markout_60m DESC
 LIMIT 10;
 
-
-------------------------------------------------------------
--- SLOW Query 4: Symbols with No Negative CAR in Low-Vol
--- Based on Milestone 3 Query 4
--- Inefficiency patterns:
--- 1. Compute 1-day volatility for ALL funding events
--- 2. NOT EXISTS with subquery that scans minute_returns
--- 3. No filtering before expensive computations
--- Expected runtime: 22-30 seconds
-------------------------------------------------------------
+-- SLOW Query 4: Symbols with No Negative CAR in Low-Vol (unoptimized)
 WITH all_funding_rv AS (
     -- Inefficiency: Compute for ALL events
     SELECT
@@ -221,7 +166,6 @@ median_rv AS (
         PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY rv_1d) AS med_rv
     FROM all_funding_rv
 )
--- Inefficiency: NOT EXISTS with repeated scans
 SELECT DISTINCT fr.symbol
 FROM all_funding_rv fr,
      median_rv m
@@ -237,18 +181,8 @@ WHERE fr.ts BETWEEN '2024-01-01' AND '2024-01-31'
 )
 ORDER BY fr.symbol;
 
-
-------------------------------------------------------------
--- SLOW Query 5: Hour-of-Day Markout Analysis
--- Based on Milestone 3 Query 5
--- Inefficiency patterns:
--- 1. Compute markouts for ALL funding events
--- 2. Late filtering by date
--- 3. Repeated funding-to-minute_returns joins
--- Expected runtime: 16-24 seconds
-------------------------------------------------------------
+-- SLOW Query 5: Hour-of-Day Markout Analysis (unoptimized)
 WITH all_event_markouts AS (
-    -- Inefficiency: Compute for ALL events across all time
     SELECT
         f.symbol,
         f.ts,
@@ -260,7 +194,6 @@ WITH all_event_markouts AS (
      AND mr.ts <= f.ts + INTERVAL '60 minutes'
     GROUP BY f.symbol, f.ts
 )
--- Inefficiency: Filter and aggregate at the end
 SELECT
     EXTRACT(HOUR FROM ts) AS funding_hour,
     AVG(markout_60m) AS avg_markout_60m,
@@ -293,7 +226,6 @@ WITH all_event_vol AS (
     GROUP BY f.symbol, f.ts
 ),
 event_vol_regimes AS (
-    -- Inefficiency: NTILE on full dataset
     SELECT
         symbol,
         ts,
@@ -302,7 +234,6 @@ event_vol_regimes AS (
     FROM all_event_vol
 ),
 event_markouts AS (
-    -- Inefficiency: Another full join to minute_returns
     SELECT
         f.symbol,
         f.ts,
@@ -317,7 +248,6 @@ event_markouts AS (
      AND mr.ts <= f.ts + INTERVAL '60 minutes'
     GROUP BY f.symbol, f.ts, evr.vol_regime
 )
--- Inefficiency: Date filter at the end
 SELECT
     vol_regime,
     AVG(markout_60m) AS avg_markout_60m,
@@ -327,18 +257,8 @@ WHERE ts BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY vol_regime
 ORDER BY vol_regime;
 
-
-------------------------------------------------------------
--- SLOW Query 7: Symbol Overview and Liquidity Stats
--- Based on Milestone 3 Query 7
--- Inefficiency patterns:
--- 1. LEFT JOIN on unfiltered klines table (largest table)
--- 2. No indexes leveraged effectively
--- 3. Count distinct operations on large datasets
--- Expected runtime: 15-22 seconds
-------------------------------------------------------------
+-- SLOW Query 7: Symbol Overview and Liquidity Stats (unoptimized)
 WITH all_klines AS (
-    -- Inefficiency: Load all klines
     SELECT
         symbol,
         open_time,
@@ -362,15 +282,11 @@ LEFT JOIN all_klines k
   ON k.symbol = s.symbol
 LEFT JOIN all_funding f
   ON f.symbol = s.symbol
--- Inefficiency: Filter applied after joins
 WHERE k.open_time BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY s.symbol
 ORDER BY s.symbol;
 
-------------------------------------------------------------
--- Query 8:
--- Rank symbols by average |funding rate|
-------------------------------------------------------------
+-- Query 8: Rank symbols by funding pressure
 SELECT
     symbol,
     AVG(ABS(rate)) AS avg_abs_rate,
@@ -380,12 +296,9 @@ WHERE ts BETWEEN '2024-01-01 00:00:00' AND '2024-01-31 23:59:59'
 GROUP BY symbol
 HAVING COUNT(*) >= 10           -- minimum # of funding prints
 ORDER BY avg_abs_rate DESC
-LIMIT 10;                       -- top-K
+LIMIT 10;
 
-------------------------------------------------------------
--- Query 9:
--- Average 30-minute realized volatility after funding
-------------------------------------------------------------
+-- Query 9: Average post-event volatility
 WITH event_rv AS (
     SELECT
         f.symbol,
@@ -406,10 +319,7 @@ FROM event_rv
 GROUP BY symbol
 ORDER BY avg_rv_30m DESC;
 
-------------------------------------------------------------
--- Query 10:
--- Count events where 30-minute CAR exceeds a threshold
-------------------------------------------------------------
+-- Query 10: Count positive price moves
 WITH event_car AS (
     SELECT
         f.symbol,
@@ -431,15 +341,13 @@ WHERE car_30m > 0.0
 GROUP BY symbol
 ORDER BY n_positive_moves DESC;
 
-------------------------------------------------------------
 -- PART 2: MATERIALIZED VIEWS FOR OPTIMIZATION
-------------------------------------------------------------
+-- Pre-compute expensive operations once, then reuse for multiple queries
+-- Key benefits: Eliminate repeated joins, cache window functions, enable indexing
 
-------------------------------------------------------------
--- Materialized View 1: Pre-computed Event Markouts
--- Stores 60-minute post-event returns for all funding events
--- Eliminates repeated joins between funding and minute_returns
-------------------------------------------------------------
+-- Materialized View 1: Event Markouts (60-minute post-event returns)
+-- Pre-joins funding events with subsequent returns to eliminate repeated joins
+-- Used by: funding deciles, extreme regimes, hourly analysis
 DROP MATERIALIZED VIEW IF EXISTS mv_event_markouts CASCADE;
 
 CREATE MATERIALIZED VIEW mv_event_markouts AS
@@ -447,6 +355,7 @@ SELECT
     f.symbol,
     f.ts AS event_ts,
     f.rate,
+    -- Pre-compute 60-minute forward returns for each funding event
     SUM(mr.r1m) AS markout_60m,
     COUNT(mr.r1m) AS n_minutes
 FROM funding f
@@ -462,12 +371,9 @@ CREATE INDEX idx_mv_event_markouts_symbol_ts
 CREATE INDEX idx_mv_event_markouts_ts
     ON mv_event_markouts(event_ts);
 
-
-------------------------------------------------------------
--- Materialized View 2: Pre-computed CAR Series
--- Stores cumulative returns for event windows
--- Eliminates repeated window function computations
-------------------------------------------------------------
+-- Materialized View 2: CAR Series (cumulative returns for event windows)
+-- Pre-computes expensive window function for cumulative abnormal returns
+-- Eliminates need to recalculate running sums for every query
 DROP MATERIALIZED VIEW IF EXISTS mv_event_car CASCADE;
 
 CREATE MATERIALIZED VIEW mv_event_car AS
@@ -477,6 +383,7 @@ WITH returns_window AS (
         f.ts AS event_ts,
         mr.ts,
         mr.r1m,
+        -- Only accumulate returns after the event timestamp
         CASE
             WHEN mr.ts >= f.ts THEN mr.r1m
             ELSE 0
@@ -491,6 +398,7 @@ SELECT
     symbol,
     event_ts,
     ts,
+    -- Running sum of post-event returns (window function is expensive!)
     SUM(post_ret) OVER (
         PARTITION BY symbol, event_ts
         ORDER BY ts
@@ -527,12 +435,7 @@ CREATE INDEX idx_mv_funding_deciles_ts
 CREATE INDEX idx_mv_funding_deciles_date_decile
     ON mv_funding_deciles(event_date, rate_decile);
 
-
-------------------------------------------------------------
--- Materialized View 4: Pre-computed Volatility Metrics
--- Stores pre-event volatility (1h and 1d) for each funding event
--- Eliminates repeated volatility calculations
-------------------------------------------------------------
+-- Materialized View 4: Event Volatility Metrics
 DROP MATERIALIZED VIEW IF EXISTS mv_event_volatility CASCADE;
 
 CREATE MATERIALIZED VIEW mv_event_volatility AS
@@ -575,14 +478,12 @@ CREATE INDEX idx_mv_event_volatility_symbol_ts
 CREATE INDEX idx_mv_event_volatility_regime
     ON mv_event_volatility(vol_regime);
 
-
-------------------------------------------------------------
--- Materialized View 5: Pre-computed Rolling OI Statistics
--- Stores rolling 14-day OI percentiles
--- Eliminates correlated subqueries
-------------------------------------------------------------
+-- Materialized View 5: Rolling OI Statistics
+-- Replaces correlated subquery (O(n²)) with window-based approach (O(n log n))
+-- Critical optimization: Turns slowest query component into fast indexed lookup
 DROP MATERIALIZED VIEW IF EXISTS mv_rolling_oi_stats CASCADE;
 
+-- Create index before materialized view for faster creation
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_open_interest_symbol_ts
 ON open_interest (symbol, ts);
 
@@ -591,6 +492,7 @@ SELECT
     base.symbol,
     base.ts,
     base.oi,
+    -- Calculate 90th percentile over rolling 14-day window
     percentile_cont(0.9) WITHIN GROUP (ORDER BY win.oi) AS p90_oi_14d
 FROM open_interest AS base
 JOIN open_interest AS win
@@ -605,12 +507,7 @@ GROUP BY
 CREATE INDEX idx_mv_rolling_oi_stats_symbol_ts
     ON mv_rolling_oi_stats(symbol, ts);
 
-
-------------------------------------------------------------
 -- Materialized View 6: Daily Funding Rate Statistics
--- Stores daily p90 absolute funding rates
--- Eliminates repeated daily aggregations
-------------------------------------------------------------
 DROP MATERIALIZED VIEW IF EXISTS mv_daily_rate_stats CASCADE;
 
 CREATE MATERIALIZED VIEW mv_daily_rate_stats AS
@@ -626,12 +523,7 @@ GROUP BY symbol, DATE(ts);
 CREATE INDEX idx_mv_daily_rate_stats_symbol_d
     ON mv_daily_rate_stats(symbol, d);
 
-
-------------------------------------------------------------
--- Materialized View 7: Pre-aggregated Symbol Statistics
--- Daily aggregated kline and funding statistics
--- Eliminates repeated table scans for symbol overview
-------------------------------------------------------------
+-- Materialized View 7: Symbol Daily Statistics
 DROP MATERIALIZED VIEW IF EXISTS mv_symbol_daily_stats CASCADE;
 
 CREATE MATERIALIZED VIEW mv_symbol_daily_stats AS
@@ -687,12 +579,9 @@ WHERE symbol = 'BTCUSDT'
 GROUP BY symbol, event_ts
 ORDER BY event_ts;
 
-
-------------------------------------------------------------
--- FAST Query 2: Funding Rate Deciles vs 60m Drift (OPTIMIZED)
--- Uses pre-computed mv_funding_deciles and mv_event_markouts
--- Expected runtime: 1-2 seconds (15x-20x improvement)
-------------------------------------------------------------
+-- FAST Query 2: Funding Rate Deciles vs 60m Drift (optimized)
+-- Joins two materialized views instead of recomputing everything
+-- No NTILE calculation, no repeated return summations
 SELECT
     fd.rate_decile,
     AVG(em.markout_60m) AS avg_markout_60m,
@@ -705,12 +594,7 @@ WHERE fd.ts BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY fd.rate_decile
 ORDER BY fd.rate_decile;
 
-
-------------------------------------------------------------
--- FAST Query 3: Extreme Regime Detection (OPTIMIZED)
--- Uses pre-computed mv_daily_rate_stats, mv_rolling_oi_stats, mv_event_markouts
--- Expected runtime: 2-3 seconds (10x-15x improvement)
-------------------------------------------------------------
+-- FAST Query 3: Extreme Regime Detection (optimized)
 WITH regime_events AS (
     SELECT
         f.symbol,
@@ -739,12 +623,7 @@ HAVING COUNT(*) >= 5
 ORDER BY avg_markout_60m DESC
 LIMIT 10;
 
-
-------------------------------------------------------------
--- FAST Query 4: Symbols with No Negative CAR in Low-Vol (OPTIMIZED)
--- Uses pre-computed mv_event_volatility
--- Expected runtime: 2-3 seconds (10x-12x improvement)
-------------------------------------------------------------
+-- FAST Query 4: Symbols with No Negative CAR in Low-Vol (optimized)
 WITH median_rv AS (
     SELECT
         PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY rv_1d) AS med_rv
@@ -766,12 +645,7 @@ WHERE ev.ts BETWEEN '2024-01-01' AND '2024-01-31'
 )
 ORDER BY ev.symbol;
 
-
-------------------------------------------------------------
--- FAST Query 5: Hour-of-Day Markout Analysis (OPTIMIZED)
--- Uses pre-computed mv_event_markouts
--- Expected runtime: <1 second (15x-20x improvement)
-------------------------------------------------------------
+-- FAST Query 5: Hour-of-Day Markout Analysis (optimized)
 SELECT
     EXTRACT(HOUR FROM event_ts) AS funding_hour,
     AVG(markout_60m) AS avg_markout_60m,
@@ -781,12 +655,7 @@ WHERE event_ts BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY funding_hour
 ORDER BY funding_hour;
 
-
-------------------------------------------------------------
--- FAST Query 6: Volatility Regime Conditioning (OPTIMIZED)
--- Uses pre-computed mv_event_volatility and mv_event_markouts
--- Expected runtime: 1-2 seconds (12x-18x improvement)
-------------------------------------------------------------
+-- FAST Query 6: Volatility Regime Conditioning (optimized)
 SELECT
     ev.vol_regime,
     AVG(em.markout_60m) AS avg_markout_60m,
@@ -799,12 +668,7 @@ WHERE ev.ts BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY ev.vol_regime
 ORDER BY ev.vol_regime;
 
-
-------------------------------------------------------------
--- FAST Query 7: Symbol Overview and Liquidity Stats (OPTIMIZED)
--- Uses pre-computed mv_symbol_daily_stats
--- Expected runtime: <1 second (15x-20x improvement)
-------------------------------------------------------------
+-- FAST Query 7: Symbol Overview and Liquidity Stats (optimized)
 SELECT
     symbol,
     SUM(n_klines) AS n_klines,
@@ -815,15 +679,9 @@ WHERE d BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY symbol
 ORDER BY symbol;
 
-
-------------------------------------------------------------
 -- PART 4: PERFORMANCE TESTING UTILITIES
-------------------------------------------------------------
 
-------------------------------------------------------------
--- Helper: Refresh all materialized views
--- Run this after data updates
-------------------------------------------------------------
+-- Refresh all materialized views
 DO $$
 BEGIN
     RAISE NOTICE 'Refreshing materialized views...';
@@ -845,34 +703,10 @@ BEGIN
 END $$;
 
 /*
-================================================================================
-OPTIMIZATION STRATEGIES EMPLOYED
-================================================================================
-
-1. **Materialized Views**: Pre-compute expensive operations once, reuse many times
-   - mv_event_markouts: Eliminates repeated funding ⨝ minute_returns joins
-   - mv_event_car: Pre-computes cumulative return window functions
-   - mv_funding_deciles: Pre-computes daily NTILE classifications
-   - mv_event_volatility: Pre-computes pre-event volatility metrics
-   - mv_rolling_oi_stats: Replaces correlated subqueries with window functions
-   - mv_daily_rate_stats: Pre-aggregates daily funding statistics
-   - mv_symbol_daily_stats: Pre-aggregates symbol-level daily metrics
-
-2. **Early Filtering**: Apply date/symbol filters immediately, not at the end
-   - Slow queries: Load full CTEs, filter in final WHERE
-   - Fast queries: Filter directly on indexed materialized view columns
-
-3. **Window Functions Over Correlated Subqueries**:
-   - mv_rolling_oi_stats uses window function instead of correlated subquery
-   - Reduces complexity from O(n²) to O(n log n)
-
-4. **Strategic Indexing**:
-   - Composite indexes on (symbol, ts) for temporal queries
-   - Single-column indexes on event_ts, date columns for range scans
-   - Regime/decile indexes for GROUP BY operations
-
-5. **Join Elimination**:
-   - Pre-join frequently accessed tables in materialized views
-   - Reduce number of runtime joins from 2-3 to 0-1
-
+OPTIMIZATION STRATEGIES:
+- Materialized views eliminate repeated joins and expensive computations
+- Early filtering on indexed columns
+- Window functions replace O(n²) correlated subqueries
+- Strategic composite and single-column indexes
+- Pre-joined tables reduce runtime join complexity
 */

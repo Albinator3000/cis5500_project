@@ -17,6 +17,7 @@ from auth import (
     get_github_user
 )
 
+# Database connection configuration
 DB_HOST = os.getenv("DB_HOST", "cis550-project-db.c1am6gascgf2.us-east-1.rds.amazonaws.com")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "cis550_project")
@@ -38,6 +39,7 @@ def get_conn():
 
 
 def run_query(sql: str, params: tuple) -> List[Dict[str, Any]]:
+    """Execute SQL query and return results as list of dictionaries."""
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -68,12 +70,14 @@ def run_query_timed(sql: str, params: tuple) -> tuple[List[Dict[str, Any]], floa
 
 app = FastAPI(title="Funding-Aware Market Maker API")
 
+# CORS configuration for frontend access
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
+# Add production frontend URL with/without trailing slash
 if FRONTEND_URL and FRONTEND_URL not in allowed_origins:
     allowed_origins.append(FRONTEND_URL)
     if FRONTEND_URL.endswith("/"):
@@ -95,6 +99,7 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+# Authentication request/response models
 class GoogleAuthRequest(BaseModel):
     token: str
 
@@ -110,6 +115,7 @@ class AuthResponse(BaseModel):
     user: Dict[str, Any]
 
 
+# Authentication endpoints
 @app.post("/api/auth/google", response_model=AuthResponse)
 async def auth_google(request: GoogleAuthRequest):
     """Authenticate with Google OAuth using ID token."""
@@ -158,6 +164,7 @@ async def get_current_user(user_data: Dict = Depends(verify_token)):
 
 @app.get("/api/symbols")
 def list_symbols() -> List[Dict[str, Any]]:
+    """Get all available trading symbols."""
     sql = """
         SELECT symbol
         FROM symbols
@@ -166,6 +173,7 @@ def list_symbols() -> List[Dict[str, Any]]:
     return run_query(sql, ())
 
 
+# Optimized query endpoints using materialized views
 @app.get("/api/event_car")
 def get_event_car(
     symbol: str,
@@ -173,6 +181,7 @@ def get_event_car(
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
     """Return min/max CAR for each funding event using pre-computed view."""
+    # Uses mv_event_car to avoid recalculating window functions
     sql = """
         SELECT
             symbol,
@@ -218,6 +227,7 @@ def get_extreme_regimes(
     top_k: int = 10,
 ) -> List[Dict[str, Any]]:
     """Identify symbols with extreme funding regimes."""
+    # Finds events where both |funding rate| and OI are above 90th percentile
     sql = """
         WITH regime_events AS (
             SELECT
@@ -256,6 +266,7 @@ def get_low_vol_safe_symbols(
     end_ts: datetime,
 ) -> List[Dict[str, Any]]:
     """Find symbols with no negative CAR during low volatility."""
+    # Identifies "safe" symbols that maintain positive returns in calm markets
     sql = """
         WITH median_rv AS (
             SELECT
@@ -404,6 +415,7 @@ def get_positive_moves(
     return run_query(sql, (start_ts, end_ts, threshold))
 
 
+# Unoptimized query endpoints for performance comparison
 @app.get("/api/slow/event_car")
 def get_event_car_slow(
     symbol: str,
@@ -411,6 +423,7 @@ def get_event_car_slow(
     end_ts: datetime,
 ) -> Dict[str, Any]:
     """Unoptimized event CAR query for performance comparison."""
+    # Intentionally inefficient: loads ALL funding events before filtering
     sql = """
         WITH all_funding AS (
             SELECT
@@ -630,6 +643,7 @@ def get_symbol_overview_slow(
     return {"results": results, "execution_time_ms": elapsed_ms}
 
 
+# Optimized query endpoints with timing for performance dashboard
 @app.get("/api/fast/event_car")
 def get_event_car_fast_timed(
     symbol: str,

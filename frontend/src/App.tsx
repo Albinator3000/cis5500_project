@@ -12,6 +12,7 @@ import LeaderboardsPage from './pages/LeaderboardsPage';
 import QueryPerformancePage from './pages/QueryPerformancePage';
 import './styles.css';
 
+// SVG icon components for navigation
 const ChartIcon = () => (
   <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -81,9 +82,11 @@ const LogoutIcon = () => (
   </svg>
 );
 
+// Route wrapper that requires authentication
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
 
+  // Show loading spinner while checking auth status
   if (isLoading) {
     return (
       <div style={{ 
@@ -104,6 +107,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+// Main layout with sidebar navigation and user badge
 const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -113,6 +117,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     navigate('/login');
   };
 
+  // Generate user initials for avatar fallback
   const getInitials = (name: string) => {
     return name
       .split(' ')

@@ -72,6 +72,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
     authService.removeToken();
 
+    // Disable Google One-Tap on logout
     if (typeof window.google !== 'undefined' && window.google.accounts) {
       window.google.accounts.id.disableAutoSelect();
     }

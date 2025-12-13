@@ -9,10 +9,12 @@ from jose import JWTError, jwt
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+# JWT configuration - tokens valid for 7 days
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
+# OAuth provider credentials from environment
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
@@ -58,6 +60,7 @@ async def verify_google_token(token: str) -> Optional[Dict[str, Any]]:
 
             if response.status_code == 200:
                 data = response.json()
+                # Verify token is for our application
                 if GOOGLE_CLIENT_ID and data.get("aud") != GOOGLE_CLIENT_ID:
                     return None
 
@@ -117,6 +120,7 @@ async def get_github_user(code: str, redirect_uri: str) -> Optional[Dict[str, An
 
             user_data = user_response.json()
 
+            # GitHub doesn't always return public email, fetch from /user/emails
             email = user_data.get("email")
             if not email:
                 email_response = await client.get(
@@ -132,6 +136,7 @@ async def get_github_user(code: str, redirect_uri: str) -> Optional[Dict[str, An
                     if primary_email:
                         email = primary_email.get("email")
 
+            # Fallback to synthetic email if none available
             return {
                 "id": str(user_data.get("id")),
                 "email": email or f"{user_data.get('login')}@github.local",

@@ -1,4 +1,6 @@
--- Query 1: CAR around funding events
+-- Query 1: Cumulative Abnormal Returns (CAR) around funding events
+-- Analyzes price movements in a [-60, +180] minute window around each funding event
+-- CAR accumulates only post-event returns to measure market reaction
 WITH funding_events AS (
     SELECT
         symbol,
@@ -13,6 +15,7 @@ returns_window AS (
         f.event_ts,
         mr.ts,
         mr.r1m,
+        -- Only accumulate returns after the event
         CASE
             WHEN mr.ts >= f.event_ts THEN mr.r1m
             ELSE 0
@@ -28,6 +31,7 @@ car_series AS (
         symbol,
         event_ts,
         ts,
+        -- Cumulative sum of post-event returns
         SUM(post_ret) OVER (
             PARTITION BY symbol, event_ts
             ORDER BY ts
@@ -44,12 +48,15 @@ FROM car_series
 GROUP BY symbol, event_ts
 ORDER BY event_ts;
 
--- Query 2: Funding rate deciles vs 60-minute drift
+-- Query 2: Funding rate deciles vs 60-minute price drift
+-- Tests if higher funding rates predict stronger price movements
+-- Divides funding rates into 10 buckets per day and measures subsequent returns
 WITH funding_with_decile AS (
     SELECT
         symbol,
         ts,
         rate,
+        -- Classify each funding rate into deciles within its day
         NTILE(10) OVER (
             PARTITION BY DATE(ts)
             ORDER BY rate
@@ -62,6 +69,7 @@ event_markouts AS (
         f.symbol,
         f.ts,
         f.rate_decile,
+        -- Sum returns in the 60 minutes following the funding event
         SUM(mr.r1m) AS markout_60m
     FROM funding_with_decile f
     JOIN minute_returns mr
@@ -79,10 +87,13 @@ GROUP BY rate_decile
 ORDER BY rate_decile;
 
 -- Query 3: Extreme regime detection
+-- Identifies periods of high funding pressure AND high open interest
+-- These "extreme regimes" may signal major market turning points
 WITH daily_rate_stats AS (
     SELECT
         symbol,
         DATE(ts) AS d,
+        -- Calculate 90th percentile of absolute funding rate per day
         PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY ABS(rate)) AS p90_abs_rate
     FROM funding
     WHERE ts BETWEEN '2024-01-01 00:00:00' AND '2024-01-31 23:59:59'
@@ -93,6 +104,7 @@ rolling_oi_stats AS (
         oi1.symbol,
         oi1.ts,
         oi1.oi,
+        -- Calculate rolling 14-day 90th percentile of OI
         (
             SELECT PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY oi2.oi)
             FROM open_interest oi2
@@ -103,6 +115,7 @@ rolling_oi_stats AS (
     WHERE oi1.ts BETWEEN '2023-12-18 00:00:00' AND '2024-01-31 23:59:59'
 ),
 regime_events AS (
+    -- Find events where BOTH metrics exceed their 90th percentiles
     SELECT
         f.symbol,
         f.ts
